@@ -19,6 +19,25 @@ let match = null;
 
 function show(id) {
   for (const el of document.querySelectorAll('.screen')) el.classList.toggle('active', el.id === id);
+  // Pins the page while playing so touches can't scroll it or bounce the browser toolbar.
+  document.documentElement.classList.toggle('playing', id === 'game');
+}
+
+// ?debug shows the longest gap between drawn frames and between server
+// updates over the last few seconds, to tell a stalled screen from a slow network.
+const debug = new URLSearchParams(location.search).has('debug')
+  ? { el: Object.assign(document.body.appendChild(document.createElement('pre')), { className: 'debug' }), frames: [], states: [], resizes: 0 }
+  : null;
+
+function trackGap(list, now) {
+  list.push(now);
+  while (list.length && list[0] < now - 3000) list.shift();
+}
+
+function maxGap(list) {
+  let max = 0;
+  for (let i = 1; i < list.length; i++) max = Math.max(max, list[i] - list[i - 1]);
+  return Math.round(max);
 }
 
 const activeScreen = () => $('.screen.active')?.id;
@@ -73,6 +92,7 @@ net.on('state', ({ s, e, paused }) => {
   if (!match) return;
   match.buffer.push(s, e);
   match.paused = paused;
+  if (debug) trackGap(debug.states, performance.now());
 });
 
 net.on('end', () => {
@@ -314,6 +334,10 @@ function frame(now) {
     if (snap.phase === 'over' && match.overAt === null) match.overAt = now;
   }
   syncOverlay(now);
+  if (debug) {
+    trackGap(debug.frames, now);
+    debug.el.textContent = `frame gap ${maxGap(debug.frames)} ms\nserver gap ${maxGap(debug.states)} ms\nresizes ${debug.resizes}`;
+  }
   match.raf = requestAnimationFrame(frame);
 }
 
@@ -385,9 +409,26 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Escape') openMenu();
 });
 
+// Mobile toolbars fire a burst of resize events while they animate; handle at
+// most one per frame.
+let resizeQueued = false;
 addEventListener('resize', () => {
-  updateOrientation();
-  renderer.resize();
+  if (debug) debug.resizes++;
+  if (resizeQueued) return;
+  resizeQueued = true;
+  requestAnimationFrame(() => {
+    resizeQueued = false;
+    updateOrientation();
+    renderer.resize();
+  });
+});
+
+// Android: the first touch in a game (a user gesture, as fullscreen requires)
+// hides the browser bars for good. iPhone browsers don't support this.
+$('#touch-pad').addEventListener('pointerdown', () => {
+  const standalone = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
+  if (document.fullscreenElement || standalone || !document.documentElement.requestFullscreen) return;
+  document.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(lockLandscape, () => {});
 });
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});

@@ -209,3 +209,9 @@ html, body { touch-action: manipulation; -webkit-tap-highlight-color: transparen
 .touch-pad.vertical .pos::before { content: "▼"; }
 .touch-pad .arrow.active { background: #ffd23f; border-color: #ffd23f; color: #000; }
 .hud, .overlay { z-index: 2; }
+
+/* While playing, pin the page so touches never scroll or rubber-band it. */
+html.playing, html.playing body { overflow: hidden; overscroll-behavior: none; position: fixed; inset: 0; }
+#game { -webkit-touch-callout: none; }
+
+.debug { position: fixed; left: 8px; bottom: 8px; z-index: 5; margin: 0; padding: 6px 8px; background: rgba(0, 0, 0, 0.8); border: 1px solid #ffd23f; color: #ffd23f; font: 12px/1.4 var(--font); pointer-events: none; }

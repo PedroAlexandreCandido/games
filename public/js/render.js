@@ -56,8 +56,12 @@ export class Renderer {
   resize() {
     const dpr = devicePixelRatio || 1;
     const { w, h } = gameSize();
-    this.canvas.width = Math.round(w * dpr);
-    this.canvas.height = Math.round(h * dpr);
+    const width = Math.round(w * dpr);
+    const height = Math.round(h * dpr);
+    // Assigning a size, even the same one, reallocates and clears the canvas.
+    if (this.canvas.width === width && this.canvas.height === height) return;
+    this.canvas.width = width;
+    this.canvas.height = height;
   }
 
   queue(events) {
