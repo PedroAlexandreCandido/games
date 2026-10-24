@@ -1,0 +1,25 @@
+# Fly.io config. Rooms live in memory, so run exactly one machine.
+app = "pong27"
+primary_region = "ams"
+
+[build]
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # Stop the machine when nobody is connected and start it on the next visit.
+  # An open game WebSocket counts as a connection, so games are never cut off.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 500
+    hard_limit = 1000
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
