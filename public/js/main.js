@@ -1,0 +1,385 @@
+import { buildArena, sideForSeat } from '../shared/arena.js';
+import { BOT_LEVELS } from '../shared/bot.js';
+import { rotate } from '../shared/vec.js';
+import { Connection } from './net.js';
+import { KeyboardInput, controlsLabel } from './input.js';
+import { Renderer, viewRotation } from './render.js';
+import { SnapshotBuffer } from './snapshots.js';
+
+const SEAT_OPTIONS = [['open', 'Open seat'], ...Object.keys(BOT_LEVELS).map((level) => [level, `Bot · ${level}`])];
+const OVER_DELAY_MS = 1200; // let the win animation play before covering the field
+
+const $ = (selector) => document.querySelector(selector);
+const renderer = new Renderer($('#field'));
+const net = new Connection();
+const NO_ROOM = { room: null, seat: null, isAdmin: false };
+let lobby = NO_ROOM; // latest `room` message from the server
+let match = null;
+
+function show(id) {
+  for (const el of document.querySelectorAll('.screen')) el.classList.toggle('active', el.id === id);
+}
+
+const activeScreen = () => $('.screen.active')?.id;
+
+function showError(message) {
+  const el = $('.screen.active .error');
+  if (el) el.textContent = message;
+}
+
+function clearErrors() {
+  for (const el of document.querySelectorAll('.error')) el.textContent = '';
+}
+
+function selectEl(name, value, options) {
+  const select = document.createElement('select');
+  select.name = name;
+  for (const [optValue, label] of options) select.add(new Option(label, optValue, false, optValue === value));
+  return select;
+}
+
+// ---- Server messages ----
+
+// Who is logged in, as the server sees this connection.
+let session = { user: null, loginRequired: false };
+
+net.on('hello', (msg) => {
+  session = msg;
+  renderSession();
+});
+
+function renderSession() {
+  const { user, loginRequired } = session;
+  $('#admin-actions').hidden = loginRequired && !user;
+  $('#session-user').textContent = user ? `Signed in as ${user}` : '';
+  $('#go-login').hidden = !loginRequired || Boolean(user);
+  $('#logout').hidden = !user;
+  if (user) createForm.elements.adminName.value = user.slice(0, 12);
+}
+
+net.on('room', (msg) => {
+  lobby = msg;
+  renderRoom();
+  if (!match && activeScreen() !== 'room') {
+    clearErrors();
+    show('room');
+  }
+});
+
+net.on('start', ({ seatCount, seat }) => startMatch(seatCount, seat));
+
+net.on('state', ({ s, e, paused }) => {
+  if (!match) return;
+  match.buffer.push(s, e);
+  match.paused = paused;
+});
+
+net.on('end', () => {
+  stopMatch();
+  show('room');
+});
+
+net.on('left', () => leaveToHome(''));
+net.on('closed', ({ reason }) => leaveToHome(reason));
+net.on('error', ({ message }) => showError(message));
+net.on('down', () => leaveToHome('Lost connection to the server. Reconnecting…'));
+net.on('up', () => {
+  if ($('#home-error').textContent.startsWith('Lost connection')) $('#home-error').textContent = '';
+});
+
+function leaveToHome(message) {
+  stopMatch();
+  lobby = NO_ROOM;
+  clearErrors();
+  show('home');
+  $('#home-error').textContent = message;
+}
+
+// ---- Home ----
+
+$('#go-create').addEventListener('click', () => {
+  clearErrors();
+  renderSeatConfig();
+  show('create');
+});
+
+$('#home-join').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const data = new FormData(e.target);
+  clearErrors();
+  net.send({ t: 'join', code: data.get('code'), name: data.get('name') });
+});
+
+// ---- Admin login ----
+
+$('#go-login').addEventListener('click', () => {
+  clearErrors();
+  show('login');
+  $('#login-form').elements.username.focus();
+});
+
+// The session lives in an HttpOnly cookie, which the WebSocket only sends when
+// it connects, so reconnect after logging in or out.
+$('#login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = new FormData(e.target);
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: data.get('username'), password: data.get('password') }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error);
+    e.target.reset();
+    net.reconnect();
+    clearErrors();
+    show('home');
+  } catch (err) {
+    showError(err.message || 'Could not log in.');
+  }
+});
+
+$('#logout').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  net.reconnect();
+});
+
+for (const btn of document.querySelectorAll('[data-nav]')) {
+  btn.addEventListener('click', () => {
+    clearErrors();
+    show(btn.dataset.nav);
+  });
+}
+
+// ---- Create room ----
+
+const createForm = $('#create-form');
+
+createForm.addEventListener('change', (e) => {
+  if (e.target.name === 'players' || e.target.name === 'adminPlays') renderSeatConfig();
+});
+
+function renderSeatConfig() {
+  const data = new FormData(createForm);
+  const count = Number(data.get('players'));
+  const adminPlays = data.get('adminPlays') === 'on';
+  const container = $('#seat-config');
+  container.replaceChildren();
+  for (let i = 0; i < count; i++) {
+    const row = document.createElement('div');
+    row.className = 'seat-row';
+    const label = document.createElement('span');
+    label.textContent = `Seat ${i + 1}`;
+    row.append(label);
+    if (adminPlays && i === 0) {
+      const you = document.createElement('span');
+      you.className = 'muted';
+      you.textContent = 'You';
+      row.append(you);
+    } else {
+      row.append(selectEl(`seat${i}`, data.get(`seat${i}`) ?? 'open', SEAT_OPTIONS));
+    }
+    container.append(row);
+  }
+  drawPreview($('#preview'), buildArena(count));
+}
+
+function drawPreview(canvas, arena) {
+  const ctx = canvas.getContext('2d');
+  const { minX, maxX, minY, maxY } = arena.bounds;
+  const k = Math.min((canvas.width - 24) / (maxX - minX), (canvas.height - 24) / (maxY - minY));
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(k, 0, 0, k, canvas.width / 2 - ((minX + maxX) / 2) * k, canvas.height / 2 - ((minY + maxY) / 2) * k);
+  ctx.lineCap = 'round';
+  for (const side of arena.sides) {
+    const goal = side.kind === 'goal';
+    ctx.setLineDash(goal ? [8 / k, 8 / k] : []);
+    ctx.lineWidth = (goal ? 1.5 : 3) / k;
+    ctx.strokeStyle = goal ? 'rgba(244,244,244,0.5)' : '#f4f4f4';
+    ctx.beginPath();
+    ctx.moveTo(side.a.x, side.a.y);
+    ctx.lineTo(side.b.x, side.b.y);
+    ctx.stroke();
+  }
+}
+
+createForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const data = new FormData(createForm);
+  const count = Number(data.get('players'));
+  clearErrors();
+  net.send({
+    t: 'create',
+    name: data.get('adminName'),
+    adminPlays: data.get('adminPlays') === 'on',
+    maxPlayers: count,
+    lives: Number(data.get('lives')),
+    seats: Array.from({ length: count }, (_, i) => data.get(`seat${i}`) ?? 'open'),
+  });
+});
+
+// ---- Room lobby ----
+
+function renderRoom() {
+  const { room, seat: mySeat, isAdmin } = lobby;
+  if (!room) return;
+  $('#room-code').textContent = room.code;
+  $('#room-meta').textContent = `${room.seats.length} players · ${room.lives} ${room.lives === 1 ? 'life' : 'lives'}`;
+  const list = $('#seat-list');
+  list.replaceChildren();
+  room.seats.forEach((seat, i) => {
+    const li = document.createElement('li');
+    li.className = `seat ${seat.kind}${i === mySeat ? ' you' : ''}`;
+    const num = document.createElement('span');
+    num.className = 'seat-num';
+    num.textContent = i + 1;
+    const name = document.createElement('span');
+    name.className = 'seat-name';
+    name.textContent = seat.kind === 'open' ? 'Waiting for player…' : seat.name;
+    const meta = document.createElement('span');
+    meta.className = 'seat-meta';
+    const tags = [];
+    if (i === mySeat) tags.push('you');
+    if (i === room.adminSeat) tags.push('admin');
+    if (seat.kind === 'bot') tags.push(`bot · ${seat.difficulty}`);
+    meta.textContent = tags.join(' · ');
+    li.append(num, name, meta);
+
+    if (isAdmin && i !== room.adminSeat && !room.started) {
+      const options = seat.kind === 'human'
+        ? [['human', 'Player'], ...SEAT_OPTIONS.map(([v, l]) => [v, v === 'open' ? 'Kick' : l])]
+        : SEAT_OPTIONS;
+      const select = selectEl(`seat${i}`, seat.kind === 'bot' ? seat.difficulty : seat.kind, options);
+      select.addEventListener('change', () => net.send({ t: 'setSeat', seat: i, config: select.value }));
+      li.append(select);
+    }
+    list.append(li);
+  });
+  const hasOpen = room.seats.some((s) => s.kind === 'open');
+  for (const el of document.querySelectorAll('.admin-only')) el.hidden = !isAdmin;
+  $('#room-wait').hidden = isAdmin;
+  $('#start-game').disabled = hasOpen || room.started;
+  $('#fill-bots').disabled = !hasOpen || room.started;
+}
+
+$('#copy-code').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(lobby.room.code);
+    $('#copy-code').textContent = 'Copied';
+    setTimeout(() => ($('#copy-code').textContent = 'Copy'), 1200);
+  } catch {
+    // Clipboard can be blocked outside secure contexts; the code is on screen anyway.
+  }
+});
+
+$('#fill-bots').addEventListener('click', () => net.send({ t: 'fillBots' }));
+$('#start-game').addEventListener('click', () => net.send({ t: 'start' }));
+$('#leave-room').addEventListener('click', () => net.send({ t: 'leave' }));
+
+// ---- Match ----
+
+function startMatch(seatCount, seat) {
+  stopMatch();
+  const arena = buildArena(seatCount);
+  const rotation = viewRotation(arena, seat);
+  let input = null;
+  let controls = '';
+  if (seat !== null) {
+    const tangent = rotate(sideForSeat(arena, seat).t, rotation);
+    controls = controlsLabel(tangent);
+    input = new KeyboardInput(tangent, (dir) => net.send({ t: 'input', dir }));
+  }
+  renderer.setMatch(arena, { youSeat: seat, rotation, controls });
+  match = { buffer: new SnapshotBuffer(), input, snap: null, paused: false, menu: false, overAt: null, overlay: null, last: performance.now(), raf: 0 };
+  hideOverlay();
+  show('game');
+  renderer.resize();
+  match.raf = requestAnimationFrame(frame);
+}
+
+function frame(now) {
+  if (!match) return;
+  const dt = Math.min(0.1, (now - match.last) / 1000);
+  match.last = now;
+  const { snap, events } = match.buffer.sample(now);
+  if (snap) {
+    renderer.queue(events);
+    renderer.draw(snap, match.paused ? 0 : dt);
+    match.snap = snap;
+    if (snap.phase === 'over' && match.overAt === null) match.overAt = now;
+  }
+  syncOverlay(now);
+  match.raf = requestAnimationFrame(frame);
+}
+
+function stopMatch() {
+  if (!match) return;
+  cancelAnimationFrame(match.raf);
+  match.input?.detach();
+  match = null;
+  hideOverlay();
+}
+
+// Picks which overlay (if any) the match needs and rebuilds it only on change.
+function syncOverlay(now) {
+  const over = match.overAt !== null && now - match.overAt > OVER_DELAY_MS;
+  let key = '';
+  if (over) key = 'over';
+  else if (match.paused) key = 'paused';
+  else if (match.menu) key = 'menu';
+  if (key === match.overlay) return;
+  match.overlay = key;
+
+  const { isAdmin } = lobby;
+  const leave = ['Leave room', () => net.send({ t: 'leave' })];
+  if (key === 'over') {
+    const winner = match.snap.players[match.snap.winner];
+    showOverlay(winner ? `${winner.name} wins` : 'Game over', isAdmin ? '' : 'Waiting for the admin…', isAdmin
+      ? [['Rematch', () => net.send({ t: 'start' }), true], ['Back to room', () => net.send({ t: 'end' })]]
+      : [leave]);
+  } else if (key === 'paused') {
+    showOverlay('Paused', isAdmin ? 'Esc to resume' : 'The admin paused the game', isAdmin
+      ? [['Resume', () => net.send({ t: 'pause' }), true], ['End match', () => net.send({ t: 'end' })]]
+      : [leave]);
+  } else if (key === 'menu') {
+    showOverlay('Menu', 'The game keeps running', [['Back to game', () => (match.menu = false), true], leave]);
+  } else {
+    hideOverlay();
+  }
+}
+
+// The admin's menu pauses the game for everyone; other players get a local menu.
+function openMenu() {
+  if (!match || match.overAt !== null) return;
+  if (lobby.isAdmin) net.send({ t: 'pause' });
+  else match.menu = !match.menu;
+}
+
+function showOverlay(title, subtitle, buttons) {
+  $('#overlay-title').textContent = title;
+  $('#overlay-sub').textContent = subtitle;
+  const row = $('#overlay-actions');
+  row.replaceChildren();
+  for (const [label, onClick, primary] of buttons) {
+    const btn = document.createElement('button');
+    btn.className = primary ? 'btn primary' : 'btn';
+    btn.textContent = label;
+    btn.addEventListener('click', onClick);
+    row.append(btn);
+  }
+  $('#overlay').hidden = false;
+  row.querySelector('button')?.focus();
+}
+
+function hideOverlay() {
+  $('#overlay').hidden = true;
+}
+
+$('#pause').addEventListener('click', openMenu);
+addEventListener('keydown', (e) => {
+  if (e.code === 'Escape') openMenu();
+});
+
+renderSeatConfig();

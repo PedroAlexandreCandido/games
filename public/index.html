@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pong Rooms</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="home" class="screen active">
+    <div class="panel">
+      <h1 class="logo">PONG<span class="logo-ball"></span></h1>
+      <p class="tagline">2–4 players · power-ups · bots</p>
+      <div id="admin-actions" hidden>
+        <button id="go-create" class="btn primary wide">Create room</button>
+        <div class="divider"><span>or join</span></div>
+      </div>
+      <form id="home-join" class="join-form">
+        <input name="code" class="code-input" placeholder="CODE" maxlength="5" autocomplete="off" spellcheck="false" required>
+        <input name="name" placeholder="Your name" maxlength="12" autocomplete="off">
+        <button class="btn">Join</button>
+      </form>
+      <p class="error" id="home-error"></p>
+      <p class="session">
+        <span id="session-user"></span>
+        <button id="go-login" class="link" type="button" hidden>Admin login</button>
+        <button id="logout" class="link" type="button" hidden>Log out</button>
+      </p>
+    </div>
+  </main>
+
+  <main id="login" class="screen">
+    <form id="login-form" class="panel">
+      <h2>Admin login</h2>
+      <label class="field">Username
+        <input name="username" autocomplete="username" required>
+      </label>
+      <label class="field">Password
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <p class="error" id="login-error"></p>
+      <div class="row">
+        <button type="button" class="btn" data-nav="home">Back</button>
+        <button class="btn primary">Log in</button>
+      </div>
+    </form>
+  </main>
+
+  <main id="create" class="screen">
+    <form id="create-form" class="panel">
+      <h2>New room</h2>
+      <label class="field">Your name
+        <input name="adminName" value="Admin" maxlength="12" autocomplete="off">
+      </label>
+      <label class="check"><input type="checkbox" name="adminPlays" checked> I'm playing</label>
+
+      <div class="field">Players
+        <div class="segmented">
+          <label><input type="radio" name="players" value="2" checked><span>2</span></label>
+          <label><input type="radio" name="players" value="3"><span>3</span></label>
+          <label><input type="radio" name="players" value="4"><span>4</span></label>
+        </div>
+      </div>
+      <canvas id="preview" width="240" height="170" aria-label="Arena preview"></canvas>
+
+      <label class="field">Lives
+        <input type="number" name="lives" min="1" max="9" value="5">
+      </label>
+
+      <div class="field">Seats
+        <div id="seat-config"></div>
+      </div>
+
+      <p class="error" id="create-error"></p>
+      <div class="row">
+        <button type="button" class="btn" data-nav="home">Back</button>
+        <button class="btn primary">Create room</button>
+      </div>
+    </form>
+  </main>
+
+  <main id="room" class="screen">
+    <div class="panel">
+      <p class="eyebrow">Room code</p>
+      <div class="code-row">
+        <div id="room-code" class="code"></div>
+        <button id="copy-code" class="btn small" type="button">Copy</button>
+      </div>
+      <p id="room-meta" class="muted"></p>
+      <ul id="seat-list" class="seats"></ul>
+
+      <p class="hint">Share the code. Friends open this page and join with it.</p>
+      <p class="hint" id="room-wait" hidden>Waiting for the admin to start the game…</p>
+      <p class="error" id="room-error"></p>
+
+      <div class="row">
+        <button id="leave-room" class="btn" type="button">Leave room</button>
+        <button id="fill-bots" class="btn admin-only" type="button">Fill with bots</button>
+        <button id="start-game" class="btn primary admin-only" type="button" disabled>Start</button>
+      </div>
+    </div>
+  </main>
+
+  <section id="game" class="screen">
+    <canvas id="field"></canvas>
+    <button id="pause" class="btn small hud" type="button">Menu</button>
+    <div id="overlay" class="overlay" hidden>
+      <div class="panel">
+        <h2 id="overlay-title"></h2>
+        <p id="overlay-sub" class="muted"></p>
+        <div id="overlay-actions" class="row"></div>
+      </div>
+    </div>
+  </section>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

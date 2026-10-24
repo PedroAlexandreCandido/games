@@ -1,0 +1,18 @@
+{
+  "name": "pong-rooms",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Multiplayer pong for 2-4 players with rooms, bots and power-ups.",
+  "scripts": {
+    "start": "node server/index.js",
+    "hash-password": "node server/hash-password.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  }
+}
