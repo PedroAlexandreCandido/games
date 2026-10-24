@@ -2,7 +2,8 @@ import { buildArena, sideForSeat } from '../shared/arena.js';
 import { BOT_LEVELS } from '../shared/bot.js';
 import { rotate } from '../shared/vec.js';
 import { Connection } from './net.js';
-import { KeyboardInput, controlsLabel } from './input.js';
+import { PaddleInput, controlsLabel } from './input.js';
+import { isTouchDevice, lockLandscape, updateOrientation } from './layout.js';
 import { Renderer, viewRotation } from './render.js';
 import { SnapshotBuffer } from './snapshots.js';
 
@@ -288,13 +289,15 @@ function startMatch(seatCount, seat) {
   let controls = '';
   if (seat !== null) {
     const tangent = rotate(sideForSeat(arena, seat).t, rotation);
-    controls = controlsLabel(tangent);
-    input = new KeyboardInput(tangent, (dir) => net.send({ t: 'input', dir }));
+    controls = controlsLabel(tangent, isTouchDevice());
+    input = new PaddleInput($('#touch-pad'), () => tangent, (dir) => net.send({ t: 'input', dir }));
   }
   renderer.setMatch(arena, { youSeat: seat, rotation, controls });
   match = { buffer: new SnapshotBuffer(), input, snap: null, paused: false, menu: false, overAt: null, overlay: null, last: performance.now(), raf: 0 };
   hideOverlay();
   show('game');
+  if (isTouchDevice()) lockLandscape();
+  updateOrientation();
   renderer.resize();
   match.raf = requestAnimationFrame(frame);
 }
@@ -381,5 +384,12 @@ $('#pause').addEventListener('click', openMenu);
 addEventListener('keydown', (e) => {
   if (e.code === 'Escape') openMenu();
 });
+
+addEventListener('resize', () => {
+  updateOrientation();
+  renderer.resize();
+});
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
 renderSeatConfig();

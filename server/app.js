@@ -19,6 +19,7 @@ const TYPES = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
+  '.webmanifest': 'application/manifest+json',
 };
 const TICK_MS = 1000 / 60;
 const HEARTBEAT_MS = 15000;

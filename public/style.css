@@ -167,3 +167,45 @@ input:focus, select:focus { outline: none; border-color: var(--fg); }
 .session { margin: 0; display: flex; gap: 10px; justify-content: center; color: var(--dim); font-size: 13px; }
 .link { font: inherit; color: var(--fg); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .link:hover { color: #ffd23f; }
+
+/* Touch devices: no double-tap zoom or text selection while playing. */
+html, body { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+#game { touch-action: none; user-select: none; -webkit-user-select: none; }
+
+/* Upright phone: draw the game screen rotated so it always plays in landscape.
+   Width and height are set from JS (layout.js) to the swapped viewport size. */
+#game.sideways {
+  position: fixed;
+  top: 0;
+  left: 0;
+  min-height: 0;
+  transform-origin: top left;
+  transform: rotate(90deg) translateY(-100%);
+}
+
+/* Holding either half of the screen steers; the arrows are only hints. */
+.touch-pad { position: fixed; inset: 0; z-index: 1; }
+.touch-pad .arrow {
+  position: absolute;
+  bottom: 20px;
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(244, 244, 244, 0.25);
+  border-radius: 50%;
+  color: rgba(244, 244, 244, 0.45);
+  font-size: 24px;
+  pointer-events: none;
+  transition: background 0.08s, color 0.08s;
+}
+.touch-pad .neg { left: 20px; }
+.touch-pad .pos { right: 20px; }
+.touch-pad .neg::before { content: "◀"; }
+.touch-pad .pos::before { content: "▶"; }
+.touch-pad.vertical .neg { left: 20px; right: auto; top: 20px; bottom: auto; }
+.touch-pad.vertical .pos { left: 20px; right: auto; bottom: 20px; }
+.touch-pad.vertical .neg::before { content: "▲"; }
+.touch-pad.vertical .pos::before { content: "▼"; }
+.touch-pad .arrow.active { background: #ffd23f; border-color: #ffd23f; color: #000; }
+.hud, .overlay { z-index: 2; }

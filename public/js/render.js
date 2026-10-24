@@ -3,6 +3,7 @@ import { CONFIG } from '../shared/sim.js';
 import { sideForSeat } from '../shared/arena.js';
 import { rotate } from '../shared/vec.js';
 import { Fx } from './fx.js';
+import { gameSize } from './layout.js';
 
 const WHITE = '#f4f4f4';
 const YOU = '#ffd23f'; // the local player's paddle and label; no power-up uses yellow
@@ -22,10 +23,10 @@ export function viewRotation(arena, seat) {
 // Draws game snapshots onto a canvas. Reads only snapshot data and the static
 // arena, which the client rebuilds from the seat count.
 export class Renderer {
+  // Call resize() whenever the window or the game screen's orientation changes.
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
-    addEventListener('resize', () => this.resize());
   }
 
   // youSeat: the seat played from this screen, drawn in its own colour (null to
@@ -54,8 +55,9 @@ export class Renderer {
 
   resize() {
     const dpr = devicePixelRatio || 1;
-    this.canvas.width = Math.round(innerWidth * dpr);
-    this.canvas.height = Math.round(innerHeight * dpr);
+    const { w, h } = gameSize();
+    this.canvas.width = Math.round(w * dpr);
+    this.canvas.height = Math.round(h * dpr);
   }
 
   queue(events) {

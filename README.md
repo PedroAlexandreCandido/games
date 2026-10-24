@@ -45,7 +45,17 @@ Vercel and other serverless platforms will not work: the game needs a long-runni
 
 Each player sees the field turned so their own side is nearest them: at the bottom in 3- and 4-player games, and on the left in 2-player games. Your paddle and name are yellow. Steer with A/D or ←/→ when your side is at the bottom, and with W/S or ↑/↓ when it's on the left.
 
+On phones and tablets, the game always plays in landscape. If the phone is held upright, the game screen is drawn sideways, so turn the phone. Hold the left or right half of the screen to steer; on a vertical side, hold the top or bottom half. The yellow arrows light up while you hold them. The menu button opens the menu.
+
 Esc opens the menu. For the admin, it pauses the game for everyone, with options to resume or end the match. For other players, it opens a menu with an option to leave, and the game keeps running. If a player disconnects mid-game, a medium bot takes over their paddle. If the admin leaves, the next human player becomes admin. A room closes when no humans are left.
+
+## Install as an app
+
+The site is a Progressive Web App:
+- **iPhone:** in Safari, tap Share, then Add to Home Screen.
+- **Android:** in Chrome, open the ⋮ menu and choose Install app.
+
+The installed app opens full screen. On Android it also locks to landscape; iPhone ignores that setting, so the game screen turns sideways instead. A service worker only lets the app open while offline; playing always needs the server.
 
 ## Rules
 
