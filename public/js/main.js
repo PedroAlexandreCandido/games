@@ -88,9 +88,9 @@ net.on('room', (msg) => {
 
 net.on('start', ({ seatCount, seat }) => startMatch(seatCount, seat));
 
-net.on('state', ({ s, e, paused }) => {
+net.on('state', ({ ts, s, e, paused }) => {
   if (!match) return;
-  match.buffer.push(s, e);
+  match.buffer.push(ts, s, e);
   match.paused = paused;
   if (debug) trackGap(debug.states, performance.now());
 });
@@ -326,7 +326,7 @@ function frame(now) {
   if (!match) return;
   const dt = Math.min(0.1, (now - match.last) / 1000);
   match.last = now;
-  const { snap, events } = match.buffer.sample(now);
+  const { snap, events } = match.buffer.sample(now, dt);
   if (snap) {
     renderer.queue(events);
     renderer.draw(snap, match.paused ? 0 : dt);
@@ -336,7 +336,7 @@ function frame(now) {
   syncOverlay(now);
   if (debug) {
     trackGap(debug.frames, now);
-    debug.el.textContent = `frame gap ${maxGap(debug.frames)} ms\nserver gap ${maxGap(debug.states)} ms\nresizes ${debug.resizes}`;
+    debug.el.textContent = `frame gap ${maxGap(debug.frames)} ms\nserver gap ${maxGap(debug.states)} ms\nbuffer ${Math.round(match.buffer.delay)} ms\nresizes ${debug.resizes}`;
   }
   match.raf = requestAnimationFrame(frame);
 }

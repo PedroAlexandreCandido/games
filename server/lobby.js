@@ -22,7 +22,7 @@ const MAX_ROOMS = 500;
 //   hello  { user, loginRequired }   user: the logged-in admin's name or null
 //   room   { room, seat, isAdmin }   seat is null for an admin who only watches
 //   start  { seatCount, seat }
-//   state  { s, e, paused }          snapshot, events since the last state
+//   state  { ts, s, e, paused }      server send time (ms), snapshot, events since the last state
 //   end    {}
 //   left   {}
 //   closed { reason }
@@ -98,7 +98,7 @@ export class Lobby {
     for (const [code, match] of this.matches) {
       if (match.finished) continue;
       match.step(dt);
-      const payload = JSON.stringify({ t: 'state', s: match.game.snapshot(), e: match.events, paused: match.paused }, roundNumbers);
+      const payload = JSON.stringify({ t: 'state', ts: performance.now(), s: match.game.snapshot(), e: match.events, paused: match.paused }, roundNumbers);
       match.events = [];
       for (const client of this.members.get(code) ?? []) client.send(payload);
       if (match.game.phase === 'over') match.finished = true;
