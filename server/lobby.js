@@ -1,6 +1,6 @@
 import { RoomManager, RoomError, roomView } from '../shared/rooms.js';
 import { Game } from '../shared/sim.js';
-import { Bot } from '../shared/bot.js';
+import { createBot } from '../shared/bot.js';
 
 const TICK = 1 / 120;
 const MAX_ROOMS = 500;
@@ -8,7 +8,7 @@ const MAX_ROOMS = 500;
 // Message protocol. Every message is JSON with its type in `t`.
 //
 // client → server
-//   create  { name, adminPlays, maxPlayers, lives, seats }   needs a logged-in admin
+//   create  { name, adminPlays, maxPlayers, lives, mode, seats }   needs a logged-in admin; mode 'pong' or 'hockey'
 //   join    { code, name }
 //   leave   {}
 //   setSeat { seat, config }   admin: 'open' (kick) or a bot level
@@ -16,12 +16,13 @@ const MAX_ROOMS = 500;
 //   start   {}                 admin: start, or rematch once a game is over
 //   end     {}                 admin: stop the match, everyone back to the room
 //   pause   {}                 admin: toggle pause
-//   input   { dir }            -1, 0 or 1 along your side
+//   input   { dir }            pong: -1, 0 or 1 along your side
+//           { x, y } | { tx, ty }   hockey: move that way, or head for that world point
 //
 // server → client
 //   hello  { user, loginRequired }   user: the logged-in admin's name or null
 //   room   { room, seat, isAdmin }   seat is null for an admin who only watches
-//   start  { seatCount, seat }
+//   start  { seatCount, seat, mode }
 //   state  { ts, s, e, paused }      server send time (ms), snapshot, events since the last state
 //   end    {}
 //   left   {}
@@ -32,9 +33,9 @@ const MAX_ROOMS = 500;
 const roundNumbers = (key, value) => (typeof value === 'number' && !Number.isInteger(value) ? Math.round(value * 100) / 100 : value);
 
 class Match {
-  constructor(seats, lives) {
-    this.game = new Game({ seats, lives });
-    this.bots = new Map(seats.flatMap((s, i) => (s.isBot ? [[i, new Bot(i, s.difficulty)]] : [])));
+  constructor(seats, lives, mode) {
+    this.game = new Game({ seats, lives, mode });
+    this.bots = new Map(seats.flatMap((s, i) => (s.isBot ? [[i, createBot(mode, i, s.difficulty)]] : [])));
     this.acc = 0;
     this.paused = false;
     this.events = [];
@@ -43,7 +44,7 @@ class Match {
 
   // A player who drops out mid-game is played by a bot from then on.
   takeOver(seat) {
-    this.bots.set(seat, new Bot(seat, 'medium'));
+    this.bots.set(seat, createBot(this.game.mode, seat, 'medium'));
     const player = this.game.players[seat];
     player.isBot = true;
     player.difficulty = 'medium';
@@ -115,6 +116,7 @@ export class Lobby {
           adminPlays: msg.adminPlays !== false,
           maxPlayers: Number(msg.maxPlayers),
           lives: msg.lives,
+          mode: msg.mode ?? 'pong',
           seats: Array.isArray(msg.seats) ? msg.seats.map(String) : [],
         });
         this.#leave(client);
@@ -153,7 +155,7 @@ export class Lobby {
       case 'input': {
         const match = this.matches.get(client.code);
         const seat = this.#seatOf(client);
-        if (match && seat !== null && !match.bots.has(seat)) match.game.setInput(seat, Number(msg.dir) || 0);
+        if (match && seat !== null && !match.bots.has(seat)) match.game.setInput(seat, match.game.hockey ? msg : msg.dir);
         return;
       }
       default:
@@ -167,8 +169,8 @@ export class Lobby {
     if (running && !running.finished) throw new RoomError('started', 'A game is already running.');
     if (running) this.rooms.finish(room.code); // rematch
     const seats = this.rooms.start(room.code, client.playerId);
-    this.matches.set(room.code, new Match(seats, room.lives));
-    for (const c of this.members.get(room.code)) c.send({ t: 'start', seatCount: seats.length, seat: this.#seatOf(c) });
+    this.matches.set(room.code, new Match(seats, room.lives, room.mode));
+    for (const c of this.members.get(room.code)) c.send({ t: 'start', seatCount: seats.length, seat: this.#seatOf(c), mode: room.mode });
     this.#broadcastRoom(room.code);
   }
 

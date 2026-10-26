@@ -44,8 +44,8 @@ test('only the admin can start, and everyone then receives game state', () => {
   assert.match(friend.last('error').message, /admin/);
 
   lobby.message(admin, { t: 'start' });
-  assert.deepEqual(admin.last('start'), { t: 'start', seatCount: 2, seat: 0 });
-  assert.deepEqual(friend.last('start'), { t: 'start', seatCount: 2, seat: 1 });
+  assert.deepEqual(admin.last('start'), { t: 'start', seatCount: 2, seat: 0, mode: 'pong' });
+  assert.deepEqual(friend.last('start'), { t: 'start', seatCount: 2, seat: 1, mode: 'pong' });
 
   lobby.message(friend, { t: 'input', dir: 1 });
   for (let i = 0; i < 30; i++) lobby.tick(1 / 60);
@@ -144,4 +144,21 @@ test('real WebSocket clients can create, join and play', async () => {
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test('air hockey rooms start hockey matches and take 2D input', () => {
+  const lobby = new Lobby();
+  const admin = connected(lobby);
+  lobby.message(admin, { t: 'create', name: 'Ana', maxPlayers: 2, mode: 'hockey', seats: ['open', 'easy'] });
+  assert.equal(admin.last('room').room.mode, 'hockey');
+  lobby.message(admin, { t: 'start' });
+  assert.equal(admin.last('start').mode, 'hockey');
+  const match = lobby.matches.get(admin.last('room').room.code);
+  lobby.message(admin, { t: 'input', tx: 0, ty: 0 });
+  assert.deepEqual(match.game.players[0].input.target, { x: 0, y: 0 });
+  lobby.tick(1 / 30);
+  assert.ok(admin.last('state').s.players[0].r > 0);
+
+  lobby.message(admin, { t: 'create', name: 'Ana', maxPlayers: 2, mode: 'tennis' });
+  assert.match(admin.last('error').message, /mode/);
 });

@@ -207,6 +207,7 @@ html, body { touch-action: manipulation; -webkit-tap-highlight-color: transparen
 .touch-pad.vertical .pos { left: 20px; right: auto; bottom: 20px; }
 .touch-pad.vertical .neg::before { content: "▲"; }
 .touch-pad.vertical .pos::before { content: "▼"; }
+.touch-pad.free .arrow { display: none; }
 .touch-pad .arrow.active { background: #ffd23f; border-color: #ffd23f; color: #000; }
 .hud, .overlay { z-index: 2; }
 

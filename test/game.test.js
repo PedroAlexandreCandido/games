@@ -2,9 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildArena } from '../shared/arena.js';
 import { Game, CONFIG } from '../shared/sim.js';
-import { Bot } from '../shared/bot.js';
+import { Bot, createBot } from '../shared/bot.js';
+import { HOCKEY } from '../shared/hockey.js';
 import { POWERUPS, rollPowerup, NEGATIVE_CHANCE } from '../shared/powerups.js';
-import { vec, sub, dot } from '../shared/vec.js';
+import { vec, add, sub, scale, dot, length } from '../shared/vec.js';
 
 // Deterministic RNG (mulberry32) so failures reproduce.
 function seeded(seed) {
@@ -124,4 +125,81 @@ test('power doubles the speed of the next shot', () => {
   assert.equal(hit.seat, 0);
   assert.equal(game.ball.shotMul, 2);
   assert.ok(game.ball.dir.x > 0);
+});
+
+// ---- Air hockey ----
+
+for (const count of [2, 3, 4]) {
+  test(`air hockey: ${count} bots play to a winner, mallets stay in their zones`, () => {
+    const rng = seeded(count * 17);
+    const game = new Game({ seats: botSeats(count, 'medium'), lives: 2, mode: 'hockey', rng });
+    const bots = game.players.map((p) => createBot('hockey', p.seat, 'medium', rng));
+    const tick = 1 / 120;
+    const seen = new Set();
+    for (let i = 0; i < 120 * 60 * 30 && game.phase !== 'over'; i++) {
+      for (const bot of bots) game.setInput(bot.seat, bot.update(game, tick));
+      game.step(tick);
+      for (const e of game.drainEvents()) seen.add(e.type);
+      for (const p of game.players.filter((q) => q.alive)) {
+        const d = length(sub(p.pos, p.zone.center));
+        assert.ok(d > p.zone.minR - 1 && d < p.zone.maxR + 1, 'mallet left its zone');
+      }
+      if (!game.ball.live) continue;
+      for (const side of game.arena.sides) {
+        assert.ok(dot(sub(game.ball.pos, side.a), side.n) > -HOCKEY.puckRadius * 3, 'puck escaped the arena');
+      }
+    }
+    assert.equal(game.phase, 'over');
+    for (const type of ['hit', 'goal', 'spawn']) assert.ok(seen.has(type), `expected a ${type} event`);
+  });
+}
+
+function hockeyGame() {
+  const game = new Game({ seats: botSeats(2, 'medium'), mode: 'hockey', rng: seeded(5) });
+  game.phase = 'playing';
+  game.ball.live = true;
+  return game;
+}
+
+test('air hockey: only the goal mouth scores; the rest of the goal side is wall', () => {
+  const game = hockeyGame();
+  const { side, mouth } = game.players[0].zone;
+  game.players[0].pos = add(game.players[0].zone.center, scale(side.n, 250)); // out of the way
+  const shoot = (u) => {
+    game.ball.pos = add(side.a, add(scale(side.t, u), scale(side.n, 30)));
+    game.ball.dir = scale(side.n, -1);
+    game.drainEvents();
+    for (let i = 0; i < 30; i++) game.step(1 / 120);
+    return game.drainEvents().map((e) => e.type);
+  };
+  assert.ok(shoot(mouth.from - 40).includes('wall'));
+  assert.equal(game.players[0].lives, 5);
+  assert.ok(shoot((mouth.from + mouth.to) / 2).includes('goal'));
+  assert.equal(game.players[0].lives, 4);
+});
+
+test('air hockey: a moving mallet sends the puck off faster, and power doubles it', () => {
+  const game = hockeyGame();
+  const p = game.players[0];
+  p.effects.power = game.time + 10;
+  game.ball.pos = add(p.pos, scale(p.zone.side.n, p.radius + HOCKEY.puckRadius + 4));
+  game.ball.dir = scale(p.zone.side.n, -1);
+  game.ball.speed = HOCKEY.puckMinSpeed;
+  game.setInput(0, { tx: game.ball.pos.x, ty: game.ball.pos.y });
+  for (let i = 0; i < 3; i++) game.step(1 / 120);
+  const hit = game.drainEvents().find((e) => e.type === 'hit');
+  assert.equal(hit.seat, 0);
+  assert.equal(game.ball.shotMul, 2);
+  assert.ok(dot(game.ball.dir, p.zone.side.n) > 0.9, 'puck heads away from the goal');
+  assert.ok(game.ball.speed > HOCKEY.puckSpeed);
+});
+
+test('air hockey: bad input is ignored, and keys move at most full speed', () => {
+  const game = hockeyGame();
+  const start = game.players[0].pos;
+  for (const bad of [null, 'x', { tx: 'a' }, { x: NaN, y: Infinity }]) game.setInput(0, bad);
+  game.setInput(0, { x: 50, y: 0 });
+  assert.ok(length(game.players[0].input.dir) <= 1);
+  game.step(1 / 120);
+  assert.ok(length(sub(game.players[0].pos, start)) <= HOCKEY.malletSpeed / 120 + 1e-6);
 });

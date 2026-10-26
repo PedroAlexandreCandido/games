@@ -1,12 +1,14 @@
 import { buildArena, sideForSeat } from '../shared/arena.js';
 import { BOT_LEVELS } from '../shared/bot.js';
+import { hockeyZone } from '../shared/hockey.js';
 import { rotate } from '../shared/vec.js';
 import { Connection } from './net.js';
-import { PaddleInput, controlsLabel } from './input.js';
+import { MalletInput, PaddleInput, controlsLabel, malletControlsLabel } from './input.js';
 import { isTouchDevice, lockLandscape, updateOrientation } from './layout.js';
 import { Renderer, viewRotation } from './render.js';
 import { SnapshotBuffer } from './snapshots.js';
 
+const MODE_NAMES = { pong: 'Pong', hockey: 'Air hockey' };
 const SEAT_OPTIONS = [['open', 'Open seat'], ...Object.keys(BOT_LEVELS).map((level) => [level, `Bot · ${level}`])];
 const OVER_DELAY_MS = 1200; // let the win animation play before covering the field
 
@@ -97,7 +99,7 @@ net.on('room', (msg) => {
   }
 });
 
-net.on('start', ({ seatCount, seat }) => startMatch(seatCount, seat));
+net.on('start', ({ seatCount, seat, mode }) => startMatch(seatCount, seat, mode));
 
 net.on('state', ({ ts, s, e, paused }) => {
   if (!match) return;
@@ -205,7 +207,7 @@ for (const btn of document.querySelectorAll('[data-nav]')) {
 const createForm = $('#create-form');
 
 createForm.addEventListener('change', (e) => {
-  if (e.target.name === 'players' || e.target.name === 'adminPlays') renderSeatConfig();
+  if (['players', 'adminPlays', 'mode'].includes(e.target.name)) renderSeatConfig();
 });
 
 function renderSeatConfig() {
@@ -230,10 +232,10 @@ function renderSeatConfig() {
     }
     container.append(row);
   }
-  drawPreview($('#preview'), buildArena(count));
+  drawPreview($('#preview'), buildArena(count), data.get('mode'));
 }
 
-function drawPreview(canvas, arena) {
+function drawPreview(canvas, arena, mode) {
   const ctx = canvas.getContext('2d');
   const { minX, maxX, minY, maxY } = arena.bounds;
   const k = Math.min((canvas.width - 24) / (maxX - minX), (canvas.height - 24) / (maxY - minY));
@@ -241,15 +243,30 @@ function drawPreview(canvas, arena) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(k, 0, 0, k, canvas.width / 2 - ((minX + maxX) / 2) * k, canvas.height / 2 - ((minY + maxY) / 2) * k);
   ctx.lineCap = 'round';
-  for (const side of arena.sides) {
-    const goal = side.kind === 'goal';
+  const line = (side, from, to, goal) => {
     ctx.setLineDash(goal ? [8 / k, 8 / k] : []);
     ctx.lineWidth = (goal ? 1.5 : 3) / k;
     ctx.strokeStyle = goal ? 'rgba(244,244,244,0.5)' : '#f4f4f4';
     ctx.beginPath();
-    ctx.moveTo(side.a.x, side.a.y);
-    ctx.lineTo(side.b.x, side.b.y);
+    ctx.moveTo(side.a.x + side.t.x * from, side.a.y + side.t.y * from);
+    ctx.lineTo(side.a.x + side.t.x * to, side.a.y + side.t.y * to);
     ctx.stroke();
+  };
+  for (const side of arena.sides) {
+    if (side.kind !== 'goal') line(side, 0, side.length, false);
+    else if (mode !== 'hockey') line(side, 0, side.length, true);
+    else {
+      const { mouth, center, minR } = hockeyZone(arena, side.seat);
+      line(side, 0, mouth.from, false);
+      line(side, mouth.from, mouth.to, true);
+      line(side, mouth.to, side.length, false);
+      ctx.setLineDash([]);
+      ctx.lineWidth = 1.5 / k;
+      ctx.strokeStyle = 'rgba(244,244,244,0.5)';
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, minR, Math.atan2(side.t.y, side.t.x), Math.atan2(-side.t.y, -side.t.x), side.t.x * side.n.y - side.t.y * side.n.x < 0);
+      ctx.stroke();
+    }
   }
 }
 
@@ -264,6 +281,7 @@ createForm.addEventListener('submit', (e) => {
     adminPlays: data.get('adminPlays') === 'on',
     maxPlayers: count,
     lives: Number(data.get('lives')),
+    mode: data.get('mode'),
     seats: Array.from({ length: count }, (_, i) => data.get(`seat${i}`) ?? 'open'),
   });
 });
@@ -275,7 +293,7 @@ function renderRoom() {
   if (!room) return;
   $('#room-code').textContent = room.code;
   setRoomPath(room.code);
-  $('#room-meta').textContent = `${room.seats.length} players · ${room.lives} ${room.lives === 1 ? 'life' : 'lives'}`;
+  $('#room-meta').textContent = `${MODE_NAMES[room.mode]} · ${room.seats.length} players · ${room.lives} ${room.lives === 1 ? 'life' : 'lives'}`;
   const list = $('#seat-list');
   list.replaceChildren();
   room.seats.forEach((seat, i) => {
@@ -329,18 +347,21 @@ $('#leave-room').addEventListener('click', () => net.send({ t: 'leave' }));
 
 // ---- Match ----
 
-function startMatch(seatCount, seat) {
+function startMatch(seatCount, seat, mode = 'pong') {
   stopMatch();
   const arena = buildArena(seatCount);
   const rotation = viewRotation(arena, seat);
   let input = null;
   let controls = '';
-  if (seat !== null) {
+  if (seat !== null && mode === 'hockey') {
+    controls = malletControlsLabel(isTouchDevice());
+    input = new MalletInput($('#touch-pad'), $('#field'), { toWorld: (x, y) => renderer.toWorld(x, y), rotation }, (move) => net.send({ t: 'input', ...move }));
+  } else if (seat !== null) {
     const tangent = rotate(sideForSeat(arena, seat).t, rotation);
     controls = controlsLabel(tangent, isTouchDevice());
     input = new PaddleInput($('#touch-pad'), () => tangent, (dir) => net.send({ t: 'input', dir }));
   }
-  renderer.setMatch(arena, { youSeat: seat, rotation, controls });
+  renderer.setMatch(arena, { mode, youSeat: seat, rotation, controls });
   match = { buffer: new SnapshotBuffer(), input, snap: null, paused: false, menu: false, overAt: null, overlay: null, last: performance.now(), raf: 0 };
   hideOverlay();
   show('game');
@@ -354,6 +375,7 @@ function frame(now) {
   if (!match) return;
   const dt = Math.min(0.1, (now - match.last) / 1000);
   match.last = now;
+  match.input?.flush?.();
   const { snap, events } = match.buffer.sample(now, dt);
   if (snap) {
     renderer.queue(events);

@@ -1,3 +1,4 @@
+import { rotate } from '../shared/vec.js';
 import { gameSize, isTouchDevice, toGame } from './layout.js';
 
 // Screen direction of each steering key.
@@ -100,5 +101,96 @@ export class PaddleInput {
     removeEventListener('resize', this.onResize);
     for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) this.pad.removeEventListener(type, this.onPointer);
     this.pad.hidden = true;
+  }
+}
+
+export const malletControlsLabel = (touch) => (touch ? 'DRAG' : 'MOUSE · WASD');
+
+// Air hockey steering. The mallet heads for the mouse pointer or a finger on
+// the screen, or moves the way the held keys point. Inputs go out at most once
+// per frame, from flush().
+export class MalletInput {
+  // toWorld maps game-screen pixels to world space; rotation is the view's.
+  constructor(pad, canvas, { toWorld, rotation }, send) {
+    this.pad = pad;
+    this.canvas = canvas;
+    this.toWorld = toWorld;
+    this.rotation = rotation;
+    this.send = send;
+    this.keys = new Set();
+    this.touches = new Map(); // pointer id → world point, most recent last
+    this.mouse = null;
+    this.sent = '';
+
+    this.onKeyDown = (e) => {
+      if (!(e.code in KEYS)) return;
+      e.preventDefault();
+      this.keys.add(e.code);
+    };
+    this.onKeyUp = (e) => this.keys.delete(e.code);
+    this.onBlur = () => {
+      this.keys.clear();
+      this.touches.clear();
+    };
+    this.onPointer = (e) => {
+      const point = () => {
+        const { x, y } = toGame(e.clientX, e.clientY);
+        return this.toWorld(x, y);
+      };
+      if (e.pointerType === 'mouse') {
+        this.mouse = point();
+        this.keys.clear(); // moving the mouse takes over from the keys
+      } else if (e.type === 'pointerup' || e.type === 'pointercancel') {
+        this.touches.delete(e.pointerId);
+      } else if (e.type === 'pointerdown' || this.touches.has(e.pointerId)) {
+        this.touches.delete(e.pointerId);
+        this.touches.set(e.pointerId, point());
+      }
+    };
+
+    addEventListener('keydown', this.onKeyDown);
+    addEventListener('keyup', this.onKeyUp);
+    addEventListener('blur', this.onBlur);
+    for (const el of [pad, canvas]) {
+      for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) el.addEventListener(type, this.onPointer);
+    }
+    pad.hidden = !isTouchDevice();
+    pad.classList.add('free');
+  }
+
+  flush() {
+    let input;
+    const touch = [...this.touches.values()].at(-1);
+    if (this.keys.size) {
+      let x = 0;
+      let y = 0;
+      for (const code of this.keys) {
+        x += KEYS[code][0];
+        y += KEYS[code][1];
+      }
+      const dir = rotate({ x, y }, -this.rotation);
+      const len = Math.hypot(dir.x, dir.y) || 1;
+      input = { x: dir.x / len, y: dir.y / len };
+    } else if (touch || this.mouse) {
+      const { x, y } = touch ?? this.mouse;
+      input = { tx: Math.round(x), ty: Math.round(y) };
+    } else {
+      input = { x: 0, y: 0 };
+    }
+    const key = JSON.stringify(input);
+    if (key === this.sent) return;
+    this.sent = key;
+    this.send(input);
+  }
+
+  detach() {
+    removeEventListener('keydown', this.onKeyDown);
+    removeEventListener('keyup', this.onKeyUp);
+    removeEventListener('blur', this.onBlur);
+    for (const el of [this.pad, this.canvas]) {
+      for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) el.removeEventListener(type, this.onPointer);
+    }
+    this.pad.hidden = true;
+    this.pad.classList.remove('free');
   }
 }

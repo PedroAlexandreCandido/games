@@ -1,6 +1,7 @@
 import { POWERUPS } from '../shared/powerups.js';
 import { CONFIG } from '../shared/sim.js';
 import { sideForSeat } from '../shared/arena.js';
+import { hockeyZone } from '../shared/hockey.js';
 import { rotate } from '../shared/vec.js';
 import { Fx } from './fx.js';
 import { gameSize } from './layout.js';
@@ -31,8 +32,10 @@ export class Renderer {
 
   // youSeat: the seat played from this screen, drawn in its own colour (null to
   // spectate). rotation: from viewRotation(). controls: key hint for youSeat.
-  setMatch(arena, { youSeat = null, rotation = 0, controls = '' } = {}) {
+  // mode: 'pong' or 'hockey'.
+  setMatch(arena, { mode = 'pong', youSeat = null, rotation = 0, controls = '' } = {}) {
     this.arena = arena;
+    this.zones = mode === 'hockey' ? new Map(arena.sides.filter((s) => s.kind === 'goal').map((s) => [s.seat, hockeyZone(arena, s.seat)])) : null;
     this.youSeat = youSeat;
     this.rotation = rotation;
     this.controls = controls;
@@ -64,6 +67,15 @@ export class Renderer {
     this.canvas.height = height;
   }
 
+  // World point under a point on the game screen (CSS pixels, landscape frame).
+  toWorld(x, y) {
+    const { canvas, view } = this;
+    const dpr = devicePixelRatio || 1;
+    const k = Math.min(canvas.width / view.w, canvas.height / view.h) / dpr;
+    const local = { x: (x - canvas.width / dpr / 2) / k + view.cx, y: (y - canvas.height / dpr / 2) / k + view.cy };
+    return rotate(local, -this.rotation);
+  }
+
   queue(events) {
     if (events.length) this.pending.push(...events);
   }
@@ -88,7 +100,8 @@ export class Renderer {
     this.#drawPowerups(snap);
     this.fx.drawBelow(ctx);
     this.#drawGhosts();
-    this.#drawPaddles(snap);
+    if (this.zones) this.#drawMallets(snap);
+    else this.#drawPaddles(snap);
     this.#drawBall(snap);
     this.fx.drawAbove(ctx, this.rotation);
     this.#drawLabels(snap);
@@ -109,7 +122,7 @@ export class Renderer {
     for (const p of snap.players) {
       const last = this.lastPaddles.get(p.seat);
       if (p.alive && p.effects.boost && last && Math.hypot(p.x - last.x, p.y - last.y) > 0.5) {
-        this.ghosts.push({ x: p.x, y: p.y, angle: Math.atan2(p.ty, p.tx), len: p.len, t: 0 });
+        this.ghosts.push({ x: p.x, y: p.y, angle: Math.atan2(p.ty, p.tx), len: p.len, r: p.r, t: 0 });
       }
       this.lastPaddles.set(p.seat, { x: p.x, y: p.y });
     }
@@ -119,16 +132,28 @@ export class Renderer {
     const { ctx, arena } = this;
     ctx.save();
     ctx.lineCap = 'round';
-    for (const side of arena.sides) {
-      const open = side.kind === 'goal' && snap.players[side.seat].alive;
+    const line = (side, from, to, open) => {
       ctx.setLineDash(open ? [6, 12] : []);
       ctx.lineWidth = open ? 2 : 5;
       ctx.strokeStyle = open ? 'rgba(244,244,244,0.3)' : WHITE;
       ctx.beginPath();
-      ctx.moveTo(side.a.x, side.a.y);
-      ctx.lineTo(side.b.x, side.b.y);
+      ctx.moveTo(side.a.x + side.t.x * from, side.a.y + side.t.y * from);
+      ctx.lineTo(side.a.x + side.t.x * to, side.a.y + side.t.y * to);
       ctx.stroke();
+    };
+    for (const side of arena.sides) {
+      const open = side.kind === 'goal' && snap.players[side.seat].alive;
+      const mouth = open && this.zones?.get(side.seat).mouth;
+      if (mouth) {
+        // Air hockey: solid wall either side of a small open goal.
+        line(side, 0, mouth.from, false);
+        line(side, mouth.from, mouth.to, true);
+        line(side, mouth.to, side.length, false);
+      } else {
+        line(side, 0, side.length, open);
+      }
     }
+    if (this.zones) this.#drawZones(snap);
     ctx.setLineDash([10, 14]);
     ctx.lineWidth = 2;
     ctx.strokeStyle = 'rgba(244,244,244,0.15)';
@@ -140,6 +165,32 @@ export class Renderer {
       ctx.arc(0, 0, 60, 0, Math.PI * 2);
     }
     ctx.stroke();
+    ctx.restore();
+  }
+
+  // Each mallet's reach: a solid crease it can't enter and a faint outer limit.
+  #drawZones(snap) {
+    const { ctx, arena } = this;
+    ctx.save();
+    ctx.beginPath();
+    arena.sides.forEach((s, i) => (i ? ctx.lineTo(s.a.x, s.a.y) : ctx.moveTo(s.a.x, s.a.y)));
+    ctx.closePath();
+    ctx.clip();
+    for (const [seat, zone] of this.zones) {
+      if (!snap.players[seat].alive) continue;
+      const { x, y } = zone.center;
+      ctx.setLineDash([]);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(244,244,244,0.35)';
+      ctx.beginPath();
+      ctx.arc(x, y, zone.minR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([4, 10]);
+      ctx.strokeStyle = 'rgba(244,244,244,0.15)';
+      ctx.beginPath();
+      ctx.arc(x, y, zone.maxR, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -193,8 +244,14 @@ export class Renderer {
       ctx.globalAlpha = 0.5 * (1 - g.t / 0.25);
       ctx.save();
       ctx.translate(g.x, g.y);
-      ctx.rotate(g.angle);
-      ctx.strokeRect(-g.len / 2, -CONFIG.paddleThickness / 2, g.len, CONFIG.paddleThickness);
+      if (g.r !== undefined) {
+        ctx.beginPath();
+        ctx.arc(0, 0, g.r, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        ctx.rotate(g.angle);
+        ctx.strokeRect(-g.len / 2, -CONFIG.paddleThickness / 2, g.len, CONFIG.paddleThickness);
+      }
       ctx.restore();
     }
     ctx.restore();
@@ -241,6 +298,60 @@ export class Renderer {
         const w = p.len * Math.min(1, remaining / def.duration);
         ctx.fillStyle = def.color;
         ctx.fillRect(-w / 2, -inward * (th / 2 + 6 + i * 6) - 1.5, w, 3);
+      });
+      ctx.restore();
+    }
+  }
+
+  #drawMallets(snap) {
+    const { ctx } = this;
+    for (const p of snap.players) {
+      if (!p.alive) continue;
+      const effects = Object.entries(p.effects).sort((a, b) => b[1] - a[1]);
+      const color = p.seat === this.youSeat ? YOU : WHITE;
+      const disc = (r, fill) => {
+        ctx.fillStyle = fill;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+      };
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      if (effects.length) {
+        ctx.shadowColor = POWERUPS[effects[0][0]].color;
+        ctx.shadowBlur = 22;
+      }
+      // A mallet seen from above: rim, groove, handle.
+      disc(p.r, color);
+      ctx.shadowBlur = 0;
+      disc(p.r * 0.62, '#000');
+      disc(p.r * 0.38, color);
+
+      const negative = effects.find(([type]) => POWERUPS[type].negative);
+      if (negative) {
+        ctx.strokeStyle = POWERUPS[negative[0]].color;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      const flash = this.fx.flashFor(p.seat);
+      if (flash) {
+        ctx.globalAlpha = flash.alpha;
+        disc(p.r + 6 * flash.alpha, flash.color);
+        ctx.globalAlpha = 1;
+      }
+
+      // One ring per active effect, unwinding as it wears off.
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      effects.forEach(([type, remaining], i) => {
+        const def = POWERUPS[type];
+        ctx.strokeStyle = def.color;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.r + 7 + i * 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, remaining / def.duration));
+        ctx.stroke();
       });
       ctx.restore();
     }
@@ -342,7 +453,7 @@ export class Renderer {
     } else if (snap.phase === 'serve') {
       ctx.globalAlpha = 0.5 + 0.5 * Math.sin(snap.time * 14);
       ctx.beginPath();
-      ctx.arc(0, 0, CONFIG.ballRadius, 0, Math.PI * 2);
+      ctx.arc(0, 0, snap.ball.r, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();

@@ -1,6 +1,6 @@
 # Pong Rooms
 
-Online pong for 2–4 players with room codes, bots and power-ups. The server runs every match itself, and each browser sends only its own paddle input.
+Online pong and air hockey for 2–4 players with room codes, bots and power-ups. The server runs every match itself, and each browser sends only its own paddle input.
 
 ## Run
 
@@ -39,13 +39,15 @@ Vercel and other serverless platforms will not work: the game needs a long-runni
 
 ## Playing
 
-1. **Create room**: choose 2, 3 or 4 seats, the number of lives, whether you play or only watch, and whether each other seat is open or a bot (easy, medium or hard).
+1. **Create room**: choose the game (Pong or Air hockey), 2, 3 or 4 seats, the number of lives, whether you play or only watch, and whether each other seat is open or a bot (easy, medium or hard).
 2. Share the room link (**Copy link**), which looks like `https://your-host/room/ABCDE`. Friends open it, type a name and join. The 5-character code also works on its own.
 3. The admin can kick players, swap open seats for bots, or use **Fill with bots**. **Start** unlocks once every seat is filled.
 
 Each player sees the field turned so their own side is nearest them: at the bottom in 3- and 4-player games, and on the left in 2-player games. Your paddle and name are yellow. Steer with A/D or ←/→ when your side is at the bottom, and with W/S or ↑/↓ when it's on the left.
 
 On phones and tablets, the game always plays in landscape. If the phone is held upright, the game screen is drawn sideways, so turn the phone. Hold the left or right half of the screen to steer; on a vertical side, hold the top or bottom half. The yellow arrows light up while you hold them. The menu button opens the menu.
+
+In air hockey, your mallet follows the mouse, or moves with WASD or the arrow keys. On phones, drag a finger and the mallet follows it.
 
 Esc opens the menu. For the admin, it pauses the game for everyone, with options to resume or end the match. For other players, it opens a menu with an option to leave, and the game keeps running. If a player disconnects mid-game, a medium bot takes over their paddle. If the admin leaves, the next human player becomes admin. A room closes when no humans are left.
 
@@ -62,6 +64,7 @@ The installed app opens full screen. On Android it also locks to landscape; iPho
 - **2 players**: classic pong. The top and bottom are walls.
 - **3 players**: a triangle with cut corners. The three long sides are goals, and the three short corner sides are walls.
 - **4 players**: a square, with a goal on every side.
+- **Air hockey** uses the same fields, but each goal is a smaller opening in the middle of its side, and the rest of the side is wall. Your round mallet moves freely within a zone around your goal: no closer than the solid crease line, and no further than the faint dashed line. The puck bounces off mallets, and swinging into it hits it harder. The puck slows slightly as it slides.
 - When a ball passes your paddle, you lose a life. At 0 lives you are out, and your side becomes a wall. The last player left wins.
 - A power-up appears near the centre every 5–10 seconds. When the ball touches one, the power goes to the player who last hit the ball. On average, 1 in 6 power-ups is negative; a negative one affects every other player.
 
@@ -69,16 +72,17 @@ The installed app opens full screen. On Android it also locks to landscape; iPho
 | --- | --- |
 | Boost (blue) | Paddle moves 1.6× faster for 10 s |
 | Power (orange) | Your shots travel at 2× speed for 10 s |
-| Growth (green) | Paddle is 1.5× longer for 10 s |
+| Growth (green) | Paddle is 1.5× longer (mallet 1.5× wider) for 10 s |
 | Slow (red, negative) | Opponents move at 0.55× speed for 7 s |
 | Weak (purple, negative) | Opponents' shots travel at 0.6× speed for 7 s |
-| Shrink (pink, negative) | Opponents' paddles are 0.6× as long for 7 s |
+| Shrink (pink, negative) | Opponents' paddles and mallets are 0.6× the size for 7 s |
 
 ## Layout
 
 - `shared/`: game logic with no DOM, used by both the server and the browser.
   - `sim.js`: authoritative simulation (`setInput` → `step` → `snapshot` / `drainEvents`)
   - `arena.js`: field geometry for 2, 3 and 4 seats
+  - `hockey.js`: air hockey goal mouths, mallet zones and tuning
   - `powerups.js`: power-up definitions and rolls
   - `bot.js`: bot AI
   - `rooms.js`: room codes, seats and admin permissions

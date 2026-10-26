@@ -18,7 +18,9 @@ function blend(a, b, k) {
     ball: smoothBall ? { ...b.ball, x: mix(a.ball.x, b.ball.x), y: mix(a.ball.y, b.ball.y) } : b.ball,
     players: b.players.map((p, i) => {
       const q = a.players[i];
-      return { ...p, x: mix(q.x, p.x), y: mix(q.y, p.y), len: mix(q.len, p.len) };
+      // Pong paddles have a length, air hockey mallets a radius.
+      const size = p.r === undefined ? { len: mix(q.len, p.len) } : { r: mix(q.r, p.r) };
+      return { ...p, x: mix(q.x, p.x), y: mix(q.y, p.y), ...size };
     }),
   };
 }

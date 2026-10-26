@@ -1,4 +1,5 @@
 import { BOT_LEVELS } from './bot.js';
+import { MODES } from './sim.js';
 
 // No 0/O or 1/I so codes are easy to read out loud.
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -20,6 +21,7 @@ const cleanName = (name, fallback) => String(name ?? '').trim().slice(0, MAX_NAM
 export function roomView(room) {
   return {
     code: room.code,
+    mode: room.mode,
     lives: room.lives,
     started: room.started,
     seats: room.seats.map((s) => ({ kind: s.kind, name: s.name ?? null, difficulty: s.difficulty ?? null })),
@@ -39,12 +41,14 @@ export class RoomManager {
 
   // seats: one entry per seat, 'open' or a bot level. Seat 0 is ignored when
   // the admin plays, because the admin sits there.
-  createRoom({ adminName, adminPlays = true, maxPlayers = 2, lives = 5, seats = [] }) {
+  createRoom({ adminName, adminPlays = true, maxPlayers = 2, lives = 5, mode = 'pong', seats = [] }) {
     if (![2, 3, 4].includes(maxPlayers)) throw new RoomError('bad-size', 'Rooms hold 2 to 4 players.');
+    if (!MODES.includes(mode)) throw new RoomError('bad-mode', 'Unknown game mode.');
     const adminId = this.#newId();
     const room = {
       code: this.#newCode(),
       adminId,
+      mode,
       lives: Math.min(9, Math.max(1, Math.round(Number(lives)) || 5)),
       started: false,
       seats: Array.from({ length: maxPlayers }, openSeat),
