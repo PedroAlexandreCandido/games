@@ -2,6 +2,7 @@ import { POWERUPS } from '../shared/powerups.js';
 import { sideForSeat } from '../shared/arena.js';
 
 const WHITE = '#f4f4f4';
+const SUPER = '#ff2e2e'; // a perfectly timed soccer shot
 const FONT = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 const rand = (lo, hi) => lo + Math.random() * (hi - lo);
 const easeOut = (k) => 1 - (1 - k) ** 3;
@@ -33,6 +34,20 @@ export class Fx {
           this.sideFlashes.push({ seat: e.seat, t: 0, life: 0.7 });
           this.burst(e.x, e.y, 24, WHITE, 300, 0.6);
           break;
+        case 'kick': this.#onKick(e); break;
+        case 'knock':
+          this.kick(16);
+          this.burst(e.x, e.y, 40, SUPER, 420, 0.7);
+          this.ring(e.x, e.y, SUPER, 110, 0.5, 6);
+          this.text(e.x, e.y - 40, 'BOOM', SUPER, 30, 1, -50);
+          this.flashes.set(e.seat, { color: SUPER, t: 0, life: 0.6 });
+          break;
+        case 'tackle':
+          this.burst(e.x, e.y, 10, WHITE, 160, 0.3);
+          this.text(e.x, e.y - 30, 'TACKLE', WHITE, 14, 0.6, -40);
+          break;
+        case 'trap': this.ring(e.x, e.y, 'rgba(244,244,244,0.6)', 24, 0.25, 2); break;
+        case 'loose': this.burst(e.x, e.y, 6, 'rgba(244,244,244,0.5)', 60, 0.4); break;
         case 'eliminated':
           this.text(0, 0, `${snap.players[e.seat].name.toUpperCase()} OUT`, WHITE, 44, 1.6, -20);
           break;
@@ -57,6 +72,20 @@ export class Fx {
       this.ring(e.x, e.y, color, 36, 0.4, 2);
       this.burst(e.x, e.y, 8, color, 50, 0.7);
     }
+  }
+
+  // A kick's flash grows with its power; a perfect one goes off like a cannon.
+  #onKick(e) {
+    if (e.perfect) {
+      this.kick(10);
+      for (let i = 0; i < 3; i++) this.ring(e.x, e.y, i === 1 ? WHITE : SUPER, 60 + i * 45, 0.35 + i * 0.12, 5 - i);
+      this.burst(e.x, e.y, 36, SUPER, 480, 0.6);
+      this.text(e.x, e.y - 36, 'PERFECT!', SUPER, 24, 0.9, -60);
+      return;
+    }
+    this.burst(e.x, e.y, 4 + Math.round(e.level * 10), WHITE, 100 + e.level * 220, 0.3);
+    if (e.level > 0.7) this.ring(e.x, e.y, WHITE, 30 + e.level * 40, 0.3, 2);
+    if (e.shot > 1.01) this.ring(e.x, e.y, POWERUPS.power.color, 80, 0.4, 4);
   }
 
   #onPickup(e) {

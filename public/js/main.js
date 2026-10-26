@@ -1,14 +1,15 @@
 import { buildArena, sideForSeat } from '../shared/arena.js';
 import { BOT_LEVELS } from '../shared/bot.js';
 import { hockeyZone } from '../shared/hockey.js';
+import { SOCCER, soccerGoal } from '../shared/soccer.js';
 import { rotate } from '../shared/vec.js';
 import { Connection } from './net.js';
-import { MalletInput, PaddleInput, controlsLabel, malletControlsLabel } from './input.js';
+import { FreeInput, PaddleInput, controlsLabel, freeControlsLabel } from './input.js';
 import { isTouchDevice, lockLandscape, updateOrientation } from './layout.js';
 import { Renderer, viewRotation } from './render.js';
 import { SnapshotBuffer } from './snapshots.js';
 
-const MODE_NAMES = { pong: 'Pong', hockey: 'Air hockey' };
+const MODE_NAMES = { pong: 'Pong', hockey: 'Air hockey', soccer: 'Soccer' };
 const SEAT_OPTIONS = [['open', 'Open seat'], ...Object.keys(BOT_LEVELS).map((level) => [level, `Bot · ${level}`])];
 const OVER_DELAY_MS = 1200; // let the win animation play before covering the field
 
@@ -254,9 +255,9 @@ function drawPreview(canvas, arena, mode) {
   };
   for (const side of arena.sides) {
     if (side.kind !== 'goal') line(side, 0, side.length, false);
-    else if (mode !== 'hockey') line(side, 0, side.length, true);
+    else if (mode === 'pong') line(side, 0, side.length, true);
     else {
-      const { mouth, center, minR } = hockeyZone(arena, side.seat);
+      const { mouth, center, minR } = mode === 'hockey' ? hockeyZone(arena, side.seat) : { ...soccerGoal(side), minR: SOCCER.creaseRadius };
       line(side, 0, mouth.from, false);
       line(side, mouth.from, mouth.to, true);
       line(side, mouth.to, side.length, false);
@@ -353,9 +354,15 @@ function startMatch(seatCount, seat, mode = 'pong') {
   const rotation = viewRotation(arena, seat);
   let input = null;
   let controls = '';
-  if (seat !== null && mode === 'hockey') {
-    controls = malletControlsLabel(isTouchDevice());
-    input = new MalletInput($('#touch-pad'), $('#field'), { toWorld: (x, y) => renderer.toWorld(x, y), rotation }, (move) => net.send({ t: 'input', ...move }));
+  if (seat !== null && mode !== 'pong') {
+    const kick = mode === 'soccer';
+    controls = freeControlsLabel(isTouchDevice(), kick);
+    input = new FreeInput(
+      $('#touch-pad'),
+      $('#field'),
+      { toWorld: (x, y) => renderer.toWorld(x, y), rotation, kick, onCharge: (start) => (renderer.localCharge = start) },
+      (move) => net.send({ t: 'input', ...move }),
+    );
   } else if (seat !== null) {
     const tangent = rotate(sideForSeat(arena, seat).t, rotation);
     controls = controlsLabel(tangent, isTouchDevice());

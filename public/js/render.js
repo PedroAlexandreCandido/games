@@ -2,12 +2,14 @@ import { POWERUPS } from '../shared/powerups.js';
 import { CONFIG } from '../shared/sim.js';
 import { sideForSeat } from '../shared/arena.js';
 import { hockeyZone } from '../shared/hockey.js';
+import { SOCCER, gauge, soccerGoal } from '../shared/soccer.js';
 import { rotate } from '../shared/vec.js';
 import { Fx } from './fx.js';
 import { gameSize } from './layout.js';
 
 const WHITE = '#f4f4f4';
 const YOU = '#ffd23f'; // the local player's paddle and label; no power-up uses yellow
+const SUPER = '#ff2e2e'; // a perfectly timed soccer shot
 const FONT = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 const LABEL_SPACE = 150; // world units kept around the arena for names and lives
 const easeOutBack = (k) => 1 + 2.7 * (k - 1) ** 3 + 1.7 * (k - 1) ** 2;
@@ -32,10 +34,18 @@ export class Renderer {
 
   // youSeat: the seat played from this screen, drawn in its own colour (null to
   // spectate). rotation: from viewRotation(). controls: key hint for youSeat.
-  // mode: 'pong' or 'hockey'.
+  // mode: 'pong', 'hockey' or 'soccer'.
   setMatch(arena, { mode = 'pong', youSeat = null, rotation = 0, controls = '' } = {}) {
     this.arena = arena;
-    this.zones = mode === 'hockey' ? new Map(arena.sides.filter((s) => s.kind === 'goal').map((s) => [s.seat, hockeyZone(arena, s.seat)])) : null;
+    this.mode = mode;
+    // Air hockey and soccer goals: the open mouth, and the lines drawn around each goal.
+    const zone = {
+      pong: () => null,
+      hockey: (side) => hockeyZone(arena, side.seat),
+      soccer: (side) => ({ ...soccerGoal(side), minR: SOCCER.creaseRadius, maxR: null }),
+    }[mode];
+    this.zones = mode === 'pong' ? null : new Map(arena.sides.filter((s) => s.kind === 'goal').map((s) => [s.seat, zone(s)]));
+    this.localCharge = null; // performance.now() when you started holding kick
     this.youSeat = youSeat;
     this.rotation = rotation;
     this.controls = controls;
@@ -100,7 +110,8 @@ export class Renderer {
     this.#drawPowerups(snap);
     this.fx.drawBelow(ctx);
     this.#drawGhosts();
-    if (this.zones) this.#drawMallets(snap);
+    if (this.mode === 'hockey') this.#drawMallets(snap);
+    else if (this.mode === 'soccer') this.#drawFootballers(snap);
     else this.#drawPaddles(snap);
     this.#drawBall(snap);
     this.fx.drawAbove(ctx, this.rotation);
@@ -111,7 +122,7 @@ export class Renderer {
   // Keeps short histories for the ball trail and boosted-paddle afterimages.
   #track(snap, dt) {
     const { ball } = snap;
-    if (ball.live) {
+    if (ball.live && ball.owner == null) {
       this.ballTrail.push({ x: ball.x, y: ball.y });
       if (this.ballTrail.length > 16) this.ballTrail.shift();
     } else {
@@ -185,6 +196,7 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(x, y, zone.minR, 0, Math.PI * 2);
       ctx.stroke();
+      if (zone.maxR === null) continue;
       ctx.setLineDash([4, 10]);
       ctx.strokeStyle = 'rgba(244,244,244,0.15)';
       ctx.beginPath();
@@ -357,12 +369,121 @@ export class Renderer {
     }
   }
 
+  #drawFootballers(snap) {
+    const { ctx } = this;
+    const ball = snap.ball;
+    for (const p of snap.players) {
+      if (!p.alive) continue;
+      const effects = Object.entries(p.effects).sort((a, b) => b[1] - a[1]);
+      const color = p.seat === this.youSeat ? YOU : WHITE;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      // Knocked over: wobble and flicker until back on their feet.
+      if (p.stunned) {
+        ctx.rotate(Math.sin(snap.time * 30) * 0.4);
+        ctx.globalAlpha = 0.55 + 0.45 * Math.sin(snap.time * 40);
+      }
+      if (effects.length) {
+        ctx.shadowColor = POWERUPS[effects[0][0]].color;
+        ctx.shadowBlur = 22;
+      }
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(0, 0, p.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      // A notch shows which way they face, which is where the ball goes.
+      const angle = Math.atan2(p.fy, p.fx);
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(angle) * p.r * 0.85, Math.sin(angle) * p.r * 0.85);
+      ctx.lineTo(Math.cos(angle + 2.5) * p.r * 0.35, Math.sin(angle + 2.5) * p.r * 0.35);
+      ctx.lineTo(Math.cos(angle - 2.5) * p.r * 0.35, Math.sin(angle - 2.5) * p.r * 0.35);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      const negative = effects.find(([type]) => POWERUPS[type].negative);
+      if (negative) {
+        ctx.strokeStyle = POWERUPS[negative[0]].color;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      const flash = this.fx.flashFor(p.seat);
+      if (flash) {
+        ctx.globalAlpha = flash.alpha;
+        ctx.fillStyle = flash.color;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.r + 6 * flash.alpha, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      // Dribble timer: a ring that runs down until the ball goes loose.
+      let ring = 0;
+      if (ball.owner === p.seat) {
+        ctx.strokeStyle = WHITE;
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.r + 7, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0, 1 - ball.dribble));
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ring = 1;
+      }
+      effects.forEach(([type, remaining], i) => {
+        const def = POWERUPS[type];
+        ctx.strokeStyle = def.color;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.r + 7 + (i + ring) * 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, remaining / def.duration));
+        ctx.stroke();
+      });
+
+      // Your own gauge runs on your own clock, so it matches what your thumb feels.
+      const held = p.seat === this.youSeat && this.localCharge !== null ? (performance.now() - this.localCharge) / 1000 : p.charge;
+      if (held !== null && held !== undefined && !p.stunned) this.#drawGauge(held, p.r);
+      ctx.restore();
+    }
+  }
+
+  // Kick power, drawn upright under the player. The bright end marks the
+  // perfect-release zone.
+  #drawGauge(held, r) {
+    const { ctx } = this;
+    const { level, perfect } = gauge(held);
+    const w = 64;
+    const h = 9;
+    const zone = SOCCER.perfectWindow / SOCCER.riseTime;
+    ctx.save();
+    ctx.rotate(-this.rotation);
+    ctx.translate(-w / 2, r + 14);
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(-2, -2, w + 4, h + 4);
+    ctx.fillStyle = 'rgba(255,154,46,0.35)';
+    ctx.fillRect(w * (1 - zone), 0, w * zone, h);
+    ctx.fillStyle = perfect ? '#ff9a2e' : WHITE;
+    if (perfect) {
+      ctx.shadowColor = '#ff9a2e';
+      ctx.shadowBlur = 16;
+    }
+    ctx.fillRect(0, 0, w * level, h);
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = WHITE;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(-2, -2, w + 4, h + 4);
+    ctx.restore();
+  }
+
   #drawBall(snap) {
     const { ctx } = this;
     const b = snap.ball;
     if (!b.live) return;
     let color = WHITE;
-    if (b.shotMul > 1.01) color = POWERUPS.power.color;
+    if (b.super) color = SUPER;
+    else if (b.shotMul > 1.01) color = POWERUPS.power.color;
     else if (b.shotMul < 0.99) color = POWERUPS.weak.color;
     const trail = this.ballTrail;
     ctx.save();

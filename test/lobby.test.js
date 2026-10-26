@@ -162,3 +162,14 @@ test('air hockey rooms start hockey matches and take 2D input', () => {
   lobby.message(admin, { t: 'create', name: 'Ana', maxPlayers: 2, mode: 'tennis' });
   assert.match(admin.last('error').message, /mode/);
 });
+
+test('soccer rooms pass kick input through', () => {
+  const lobby = new Lobby();
+  const admin = connected(lobby);
+  lobby.message(admin, { t: 'create', name: 'Ana', maxPlayers: 2, mode: 'soccer', seats: ['open', 'easy'] });
+  lobby.message(admin, { t: 'start' });
+  assert.equal(admin.last('start').mode, 'soccer');
+  const match = lobby.matches.get(admin.last('room').room.code);
+  lobby.message(admin, { t: 'input', charge: true });
+  assert.equal(match.game.players[0].chargeStart, match.game.time);
+});

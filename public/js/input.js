@@ -104,40 +104,73 @@ export class PaddleInput {
   }
 }
 
-export const malletControlsLabel = (touch) => (touch ? 'DRAG' : 'MOUSE · WASD');
+export function freeControlsLabel(touch, kick) {
+  if (kick) return touch ? 'DRAG · KICK' : 'MOUSE / WASD · SPACE';
+  return touch ? 'DRAG' : 'MOUSE · WASD';
+}
 
-// Air hockey steering. The mallet heads for the mouse pointer or a finger on
-// the screen, or moves the way the held keys point. Inputs go out at most once
-// per frame, from flush().
-export class MalletInput {
+// Free movement for air hockey and soccer. You head for the mouse pointer or
+// a finger on the screen, or move the way the held keys point. Movement goes
+// out at most once per frame, from flush(). With `kick` (soccer), holding
+// Space, the mouse button or the KICK button charges a kick, and releasing
+// sends it with how long it was held; onCharge(start) reports the
+// performance.now() it started, or null once released.
+export class FreeInput {
   // toWorld maps game-screen pixels to world space; rotation is the view's.
-  constructor(pad, canvas, { toWorld, rotation }, send) {
+  constructor(pad, canvas, { toWorld, rotation, kick = false, onCharge = () => {} }, send) {
     this.pad = pad;
     this.canvas = canvas;
     this.toWorld = toWorld;
     this.rotation = rotation;
     this.send = send;
+    this.kick = kick;
+    this.onCharge = onCharge;
     this.keys = new Set();
     this.touches = new Map(); // pointer id → world point, most recent last
     this.mouse = null;
     this.sent = '';
+    this.chargeStart = null;
+    this.chargeBy = null; // 'Space', 'mouse' or the touch pointer id holding KICK
 
     this.onKeyDown = (e) => {
+      if (kick && e.code === 'Space') {
+        e.preventDefault();
+        if (!e.repeat) this.#press('Space');
+        return;
+      }
       if (!(e.code in KEYS)) return;
       e.preventDefault();
       this.keys.add(e.code);
     };
-    this.onKeyUp = (e) => this.keys.delete(e.code);
+    this.onKeyUp = (e) => {
+      if (kick && e.code === 'Space') {
+        e.preventDefault(); // or a focused button would click
+        this.#release('Space');
+      }
+      this.keys.delete(e.code);
+    };
     this.onBlur = () => {
       this.keys.clear();
       this.touches.clear();
+      if (this.chargeBy !== null) this.#release(this.chargeBy);
     };
     this.onPointer = (e) => {
       const point = () => {
         const { x, y } = toGame(e.clientX, e.clientY);
         return this.toWorld(x, y);
       };
+      const ends = e.type === 'pointerup' || e.type === 'pointercancel';
+      if (kick && e.type === 'pointerdown' && e.target.closest?.('.kick')) {
+        this.#press(e.pointerId);
+        return;
+      }
+      if (ends && this.chargeBy === e.pointerId) {
+        this.#release(e.pointerId);
+        return;
+      }
       if (e.pointerType === 'mouse') {
+        if (kick && e.type === 'pointerdown' && e.button === 0) this.#press('mouse');
+        if (kick && e.type === 'pointerup' && e.button === 0) this.#release('mouse');
         this.mouse = point();
         this.keys.clear(); // moving the mouse takes over from the keys
       } else if (e.type === 'pointerup' || e.type === 'pointercancel') {
@@ -156,6 +189,29 @@ export class MalletInput {
     }
     pad.hidden = !isTouchDevice();
     pad.classList.add('free');
+    pad.classList.toggle('soccer', kick);
+    document.activeElement?.blur?.();
+  }
+
+  #press(by) {
+    if (this.chargeBy !== null) return;
+    this.chargeBy = by;
+    this.chargeStart = performance.now();
+    this.pad.querySelector('.kick')?.classList.add('active');
+    this.onCharge(this.chargeStart);
+    this.send({ charge: true });
+  }
+
+  #release(by) {
+    if (this.chargeBy !== by) return;
+    const held = Math.round(performance.now() - this.chargeStart);
+    this.chargeBy = null;
+    this.chargeStart = null;
+    this.pad.querySelector('.kick')?.classList.remove('active');
+    this.onCharge(null);
+    // Send the move first so the kick goes the way you're heading now.
+    this.flush();
+    this.send({ charge: false, held });
   }
 
   flush() {
@@ -191,6 +247,7 @@ export class MalletInput {
       for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) el.removeEventListener(type, this.onPointer);
     }
     this.pad.hidden = true;
-    this.pad.classList.remove('free');
+    this.pad.classList.remove('free', 'soccer');
+    this.pad.querySelector('.kick')?.classList.remove('active');
   }
 }

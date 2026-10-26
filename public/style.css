@@ -208,6 +208,23 @@ html, body { touch-action: manipulation; -webkit-tap-highlight-color: transparen
 .touch-pad.vertical .neg::before { content: "▲"; }
 .touch-pad.vertical .pos::before { content: "▼"; }
 .touch-pad.free .arrow { display: none; }
+.touch-pad .kick { display: none; }
+.touch-pad.soccer .kick {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  width: 92px;
+  height: 92px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--fg);
+  border-radius: 50%;
+  color: var(--fg);
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  background: rgba(0, 0, 0, 0.5);
+}
+.touch-pad .kick.active { background: #ffd23f; border-color: #ffd23f; color: #000; }
 .touch-pad .arrow.active { background: #ffd23f; border-color: #ffd23f; color: #000; }
 .hud, .overlay { z-index: 2; }
 

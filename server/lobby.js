@@ -8,7 +8,7 @@ const MAX_ROOMS = 500;
 // Message protocol. Every message is JSON with its type in `t`.
 //
 // client → server
-//   create  { name, adminPlays, maxPlayers, lives, mode, seats }   needs a logged-in admin; mode 'pong' or 'hockey'
+//   create  { name, adminPlays, maxPlayers, lives, mode, seats }   needs a logged-in admin; mode 'pong', 'hockey' or 'soccer'
 //   join    { code, name }
 //   leave   {}
 //   setSeat { seat, config }   admin: 'open' (kick) or a bot level
@@ -17,7 +17,8 @@ const MAX_ROOMS = 500;
 //   end     {}                 admin: stop the match, everyone back to the room
 //   pause   {}                 admin: toggle pause
 //   input   { dir }            pong: -1, 0 or 1 along your side
-//           { x, y } | { tx, ty }   hockey: move that way, or head for that world point
+//           { x, y } | { tx, ty }   hockey and soccer: move that way, or head for that world point
+//           { charge, held }         soccer: kick pressed (true) or released (false, held ms)
 //
 // server → client
 //   hello  { user, loginRequired }   user: the logged-in admin's name or null
@@ -155,7 +156,7 @@ export class Lobby {
       case 'input': {
         const match = this.matches.get(client.code);
         const seat = this.#seatOf(client);
-        if (match && seat !== null && !match.bots.has(seat)) match.game.setInput(seat, match.game.hockey ? msg : msg.dir);
+        if (match && seat !== null && !match.bots.has(seat)) match.game.setInput(seat, match.game.mode === 'pong' ? msg.dir : msg);
         return;
       }
       default:
