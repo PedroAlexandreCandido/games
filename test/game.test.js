@@ -372,3 +372,38 @@ test('teams: soccer players cannot tackle their teammate', () => {
   for (let i = 0; i < 10; i++) game.step(1 / 120);
   assert.equal(game.ball.owner, 0);
 });
+
+// Plays 90 s of a 2 vs 2 bot game and reports how the teammates spread out.
+function teamShape(mode, difficulty, seed) {
+  const rng = seeded(seed);
+  const game = new Game({ seats: botSeats(4, difficulty), lives: 9, mode, teams: true, rng });
+  const bots = game.players.map((p) => createBot(mode, p.seat, difficulty, rng));
+  let samples = 0;
+  let stacked = 0;
+  let oneBack = 0;
+  for (let i = 0; i < 120 * 90; i++) {
+    for (const b of bots) game.setInput(b.seat, b.update(game, 1 / 120));
+    game.step(1 / 120);
+    game.drainEvents();
+    if (game.phase !== 'playing') continue;
+    for (const [a, b] of [[0, 2], [1, 3]].map((pair) => pair.map((s) => game.players[s]))) {
+      const home = (a.goal ?? a.zone).center;
+      samples++;
+      if (length(sub(a.pos, b.pos)) < a.radius * 4) stacked++;
+      if (Math.min(length(sub(a.pos, home)), length(sub(b.pos, home))) < 260) oneBack++;
+    }
+  }
+  return { stacked: stacked / samples, oneBack: oneBack / samples };
+}
+
+for (const mode of ['hockey', 'soccer']) {
+  test(`teams: ${mode} bot teammates spread out instead of both chasing the ball`, () => {
+    const { stacked } = teamShape(mode, 'medium', 21);
+    assert.ok(stacked < 0.35, `teammates close together ${(stacked * 100).toFixed(0)}% of the time`);
+  });
+}
+
+test('teams: on hard, a soccer bot hangs back to defend', () => {
+  const { oneBack } = teamShape('soccer', 'hard', 22);
+  assert.ok(oneBack > 0.6, `someone near the goal ${(oneBack * 100).toFixed(0)}% of the time`);
+});

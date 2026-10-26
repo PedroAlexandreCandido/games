@@ -110,7 +110,9 @@ export function freeControlsLabel(touch, kick) {
 }
 
 // Free movement for air hockey and soccer. You head for the mouse pointer or
-// a finger on the screen, or move the way the held keys point. Movement goes
+// a finger on the screen, or move the way the held keys point. Pressing a
+// steering key drops the mouse until it moves again, so a pointer resting on
+// the field doesn't pull you back between key presses. Movement goes
 // out at most once per frame, from flush(). With `kick` (soccer), holding
 // Space, the mouse button or the KICK button charges a kick, and releasing
 // sends it with how long it was held; onCharge(start) reports the
@@ -128,6 +130,7 @@ export class FreeInput {
     this.keys = new Set();
     this.touches = new Map(); // pointer id → world point, most recent last
     this.mouse = null;
+    this.mouseAt = null; // last pointer position on screen, to spot real movement
     this.sent = '';
     this.chargeStart = null;
     this.chargeBy = null; // 'Space', 'mouse' or the touch pointer id holding KICK
@@ -141,6 +144,7 @@ export class FreeInput {
       if (!(e.code in KEYS)) return;
       e.preventDefault();
       this.keys.add(e.code);
+      this.mouse = null; // the keys take over until the mouse moves again
     };
     this.onKeyUp = (e) => {
       if (kick && e.code === 'Space') {
@@ -171,6 +175,11 @@ export class FreeInput {
       if (e.pointerType === 'mouse') {
         if (kick && e.type === 'pointerdown' && e.button === 0) this.#press('mouse');
         if (kick && e.type === 'pointerup' && e.button === 0) this.#release('mouse');
+        // Browsers can send a move without the mouse moving (when the page
+        // under it changes); only a real move or a click hands control back.
+        const moved = this.mouseAt?.x !== e.clientX || this.mouseAt?.y !== e.clientY;
+        this.mouseAt = { x: e.clientX, y: e.clientY };
+        if (e.type === 'pointermove' && !moved && this.mouse === null) return;
         this.mouse = point();
         this.keys.clear(); // moving the mouse takes over from the keys
       } else if (e.type === 'pointerup' || e.type === 'pointercancel') {

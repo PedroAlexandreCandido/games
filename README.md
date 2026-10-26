@@ -47,9 +47,11 @@ Each player sees the field turned so their own side is nearest them: at the bott
 
 On phones and tablets, the game always plays in landscape. If the phone is held upright, the game screen is drawn sideways, so turn the phone. Hold the left or right half of the screen to steer; on a vertical side, hold the top or bottom half. The yellow arrows light up while you hold them. The menu button opens the menu.
 
-In air hockey, your mallet follows the mouse, or moves with WASD or the arrow keys. On phones, drag a finger and the mallet follows it.
+In air hockey, your mallet follows the mouse, or moves with WASD or the arrow keys. Pressing a key turns the mouse off until you move it again, so a resting pointer doesn't pull you back between key presses. On phones, drag a finger and the mallet follows it.
 
 In soccer, you move the same way. Hold Space (or the mouse button, or the KICK button on phones) to charge a kick, and let go to kick the way you're facing. A quick tap is a soft pass; a longer hold is a harder shot. The gauge fills, then empties again if you keep holding. Let go exactly as it fills (the orange end) for a perfect shot.
+
+In team games, bots split the work: one goes for the ball while its teammate keeps its distance, getting into space for a pass or covering behind. Hard bots keep one player back as a defender.
 
 Esc opens the menu. For the admin, it pauses the game for everyone, with options to resume or end the match. For other players, it opens a menu with an option to leave, and the game keeps running. If a player disconnects mid-game, a medium bot takes over their paddle. If the admin leaves, the next human player becomes admin. A room closes when no humans are left.
 
