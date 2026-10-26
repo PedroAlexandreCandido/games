@@ -21,6 +21,8 @@ const TYPES = {
   '.ico': 'image/x-icon',
   '.webmanifest': 'application/manifest+json',
 };
+// Shared room links (/room/CODE) open the same page, which reads the code from the path.
+const ROOM_PAGE = /^\/room\/[A-Za-z0-9]{1,8}\/?$/;
 const TICK_MS = 1000 / 60;
 const HEARTBEAT_MS = 15000;
 const MAX_BODY = 2048;
@@ -28,7 +30,8 @@ const MAX_BODY = 2048;
 async function serveStatic(req, res) {
   try {
     let pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
-    if (pathname.endsWith('/')) pathname += 'index.html';
+    if (ROOM_PAGE.test(pathname)) pathname = '/index.html';
+    else if (pathname.endsWith('/')) pathname += 'index.html';
     const [prefix, dir] = MOUNTS.find(([p]) => pathname.startsWith(p));
     const file = resolve(dir, '.' + pathname.slice(prefix.length - 1));
     if (!file.startsWith(dir + sep)) {

@@ -40,7 +40,7 @@ Vercel and other serverless platforms will not work: the game needs a long-runni
 ## Playing
 
 1. **Create room**: choose 2, 3 or 4 seats, the number of lives, whether you play or only watch, and whether each other seat is open or a bot (easy, medium or hard).
-2. Share the 5-character code. Friends open the same page and join with it.
+2. Share the room link (**Copy link**), which looks like `https://your-host/room/ABCDE`. Friends open it, type a name and join. The 5-character code also works on its own.
 3. The admin can kick players, swap open seats for bots, or use **Fill with bots**. **Start** unlocks once every seat is filled.
 
 Each player sees the field turned so their own side is nearest them: at the bottom in 3- and 4-player games, and on the left in 2-player games. Your paddle and name are yellow. Steer with A/D or ←/→ when your side is at the bottom, and with W/S or ↑/↓ when it's on the left.

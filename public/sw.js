@@ -19,6 +19,10 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(event.request)),
+      .catch(async () => {
+        const cached = await caches.match(event.request, { ignoreSearch: true });
+        // Every page, room links included, is the same app shell.
+        return cached ?? (event.request.mode === 'navigate' ? caches.match('/', { ignoreSearch: true }) : undefined);
+      }),
   );
 });

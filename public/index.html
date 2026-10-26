@@ -9,10 +9,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="Pong">
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icons/icon-192.png" type="image/png">
-  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <main id="home" class="screen active">
@@ -92,12 +92,12 @@
       <p class="eyebrow">Room code</p>
       <div class="code-row">
         <div id="room-code" class="code"></div>
-        <button id="copy-code" class="btn small" type="button">Copy</button>
+        <button id="copy-code" class="btn small" type="button">Copy link</button>
       </div>
       <p id="room-meta" class="muted"></p>
       <ul id="seat-list" class="seats"></ul>
 
-      <p class="hint">Share the code. Friends open this page and join with it.</p>
+      <p class="hint">Share the link, or the code. Friends open it and pick a name to join.</p>
       <p class="hint" id="room-wait" hidden>Waiting for the admin to start the game…</p>
       <p class="error" id="room-error"></p>
 
@@ -125,6 +125,6 @@
     </div>
   </section>
 
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="/js/main.js"></script>
 </body>
 </html>

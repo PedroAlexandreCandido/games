@@ -17,6 +17,17 @@ const NO_ROOM = { room: null, seat: null, isAdmin: false };
 let lobby = NO_ROOM; // latest `room` message from the server
 let match = null;
 
+// The room you're in lives in the URL (/room/CODE), so the link alone is
+// enough to share it, and reopening it lands back on the join form.
+const ROOM_PATH = /^\/room\/([A-Za-z0-9]+)\/?$/;
+const roomLink = (code) => new URL(code ? `/room/${code}` : '/', location.origin);
+
+function setRoomPath(code) {
+  const url = roomLink(code);
+  url.search = location.search;
+  if (url.href !== location.href) history.replaceState(null, '', url);
+}
+
 function show(id) {
   for (const el of document.querySelectorAll('.screen')) el.classList.toggle('active', el.id === id);
   // Pins the page while playing so touches can't scroll it or bounce the browser toolbar.
@@ -100,8 +111,14 @@ net.on('end', () => {
   show('room');
 });
 
-net.on('left', () => leaveToHome(''));
-net.on('closed', ({ reason }) => leaveToHome(reason));
+net.on('left', () => {
+  setRoomPath(null);
+  leaveToHome('');
+});
+net.on('closed', ({ reason }) => {
+  setRoomPath(null);
+  leaveToHome(reason);
+});
 net.on('error', ({ message }) => showError(message));
 net.on('down', () => leaveToHome('Lost connection to the server. Reconnecting…'));
 net.on('up', () => {
@@ -123,6 +140,16 @@ $('#go-create').addEventListener('click', () => {
   renderSeatConfig();
   show('create');
 });
+
+// Opened from a shared link: the code is filled in, so only a name is needed.
+{
+  const code = ROOM_PATH.exec(location.pathname)?.[1];
+  if (code) {
+    const form = $('#home-join');
+    form.elements.code.value = code.toUpperCase().slice(0, 5);
+    form.elements.name.focus();
+  }
+}
 
 $('#home-join').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -247,6 +274,7 @@ function renderRoom() {
   const { room, seat: mySeat, isAdmin } = lobby;
   if (!room) return;
   $('#room-code').textContent = room.code;
+  setRoomPath(room.code);
   $('#room-meta').textContent = `${room.seats.length} players · ${room.lives} ${room.lives === 1 ? 'life' : 'lives'}`;
   const list = $('#seat-list');
   list.replaceChildren();
@@ -287,11 +315,11 @@ function renderRoom() {
 
 $('#copy-code').addEventListener('click', async () => {
   try {
-    await navigator.clipboard.writeText(lobby.room.code);
+    await navigator.clipboard.writeText(roomLink(lobby.room.code).href);
     $('#copy-code').textContent = 'Copied';
-    setTimeout(() => ($('#copy-code').textContent = 'Copy'), 1200);
+    setTimeout(() => ($('#copy-code').textContent = 'Copy link'), 1200);
   } catch {
-    // Clipboard can be blocked outside secure contexts; the code is on screen anyway.
+    // Clipboard can be blocked outside secure contexts; the address bar has the link anyway.
   }
 });
 
