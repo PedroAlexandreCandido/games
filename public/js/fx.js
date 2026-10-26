@@ -31,7 +31,7 @@ export class Fx {
         case 'pickup': this.#onPickup(e); break;
         case 'goal':
           this.kick(14);
-          this.sideFlashes.push({ seat: e.seat, t: 0, life: 0.7 });
+          this.sideFlashes.push({ seat: e.side ?? e.seat, t: 0, life: 0.7 });
           this.burst(e.x, e.y, 24, WHITE, 300, 0.6);
           break;
         case 'kick': this.#onKick(e); break;

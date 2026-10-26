@@ -44,8 +44,8 @@ test('only the admin can start, and everyone then receives game state', () => {
   assert.match(friend.last('error').message, /admin/);
 
   lobby.message(admin, { t: 'start' });
-  assert.deepEqual(admin.last('start'), { t: 'start', seatCount: 2, seat: 0, mode: 'pong' });
-  assert.deepEqual(friend.last('start'), { t: 'start', seatCount: 2, seat: 1, mode: 'pong' });
+  assert.deepEqual(admin.last('start'), { t: 'start', seatCount: 2, seat: 0, mode: 'pong', teams: false });
+  assert.deepEqual(friend.last('start'), { t: 'start', seatCount: 2, seat: 1, mode: 'pong', teams: false });
 
   lobby.message(friend, { t: 'input', dir: 1 });
   for (let i = 0; i < 30; i++) lobby.tick(1 / 60);
@@ -172,4 +172,17 @@ test('soccer rooms pass kick input through', () => {
   const match = lobby.matches.get(admin.last('room').room.code);
   lobby.message(admin, { t: 'input', charge: true });
   assert.equal(match.game.players[0].chargeStart, match.game.time);
+});
+
+test('team rooms need 4 players and start team matches', () => {
+  const lobby = new Lobby();
+  const admin = connected(lobby);
+  lobby.message(admin, { t: 'create', name: 'Ana', maxPlayers: 3, teams: true });
+  assert.match(admin.last('error').message, /4 players/);
+  lobby.message(admin, { t: 'create', name: 'Ana', maxPlayers: 4, teams: true, mode: 'hockey', seats: ['open', 'easy', 'easy', 'easy'] });
+  assert.equal(admin.last('room').room.teams, true);
+  lobby.message(admin, { t: 'start' });
+  assert.deepEqual(admin.last('start'), { t: 'start', seatCount: 4, seat: 0, mode: 'hockey', teams: true });
+  lobby.tick(1 / 30);
+  assert.equal(admin.last('state').s.teams, true);
 });

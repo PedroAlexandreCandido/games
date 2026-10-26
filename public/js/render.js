@@ -287,6 +287,11 @@ export class Renderer {
       ctx.fillStyle = p.seat === this.youSeat ? YOU : WHITE;
       ctx.fillRect(-p.len / 2, -th / 2, p.len, th);
       ctx.shadowBlur = 0;
+      if (this.#isMate(p, snap)) {
+        ctx.strokeStyle = YOU;
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(-p.len / 2 + 1.25, -th / 2 + 1.25, p.len - 2.5, th - 2.5);
+      }
 
       const negative = effects.find(([type]) => POWERUPS[type].negative);
       if (negative) {
@@ -321,6 +326,7 @@ export class Renderer {
       if (!p.alive) continue;
       const effects = Object.entries(p.effects).sort((a, b) => b[1] - a[1]);
       const color = p.seat === this.youSeat ? YOU : WHITE;
+      const mate = this.#isMate(p, snap);
       const disc = (r, fill) => {
         ctx.fillStyle = fill;
         ctx.beginPath();
@@ -337,7 +343,7 @@ export class Renderer {
       disc(p.r, color);
       ctx.shadowBlur = 0;
       disc(p.r * 0.62, '#000');
-      disc(p.r * 0.38, color);
+      disc(p.r * 0.38, mate ? YOU : color);
 
       const negative = effects.find(([type]) => POWERUPS[type].negative);
       if (negative) {
@@ -392,6 +398,13 @@ export class Renderer {
       ctx.arc(0, 0, p.r, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
+      if (this.#isMate(p, snap)) {
+        ctx.strokeStyle = YOU;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.r - 1.5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       // A notch shows which way they face, which is where the ball goes.
       const angle = Math.atan2(p.fy, p.fx);
       ctx.fillStyle = '#000';
@@ -477,6 +490,12 @@ export class Renderer {
     ctx.restore();
   }
 
+  // Your teammate gets a yellow trim, so you can tell them apart from rivals.
+  #isMate(p, snap) {
+    const you = snap.players[this.youSeat];
+    return snap.teams && you !== undefined && p.seat !== you.seat && p.team === you.team;
+  }
+
   #drawBall(snap) {
     const { ctx } = this;
     const b = snap.ball;
@@ -515,19 +534,30 @@ export class Renderer {
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    for (const p of snap.players) {
-      const side = sideForSeat(this.arena, p.seat);
+    // One label per goal: a player, or both teammates, who share lives.
+    for (const side of this.arena.sides.filter((s) => s.kind === 'goal')) {
+      const members = snap.players.filter((q) => q.team === side.seat);
+      const p = members[0];
       const x = (side.a.x + side.b.x) / 2 - side.n.x * 78;
       const y = (side.a.y + side.b.y) / 2 - side.n.y * 78;
-      const isYou = p.seat === this.youSeat;
+      const isYou = members.some((q) => q.seat === this.youSeat);
       // Text stays upright whatever way the field is turned.
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(-this.rotation);
       ctx.globalAlpha = p.alive ? 1 : 0.35;
+      if (members.length > 1) {
+        ctx.font = `700 17px ${FONT}`;
+        members.forEach((q, i) => {
+          ctx.fillStyle = q.seat === this.youSeat ? YOU : WHITE;
+          ctx.fillText(q.name.toUpperCase(), 0, -40 + i * 21);
+        });
+      } else {
+        ctx.font = `700 20px ${FONT}`;
+        ctx.fillStyle = isYou ? YOU : WHITE;
+        ctx.fillText(p.name.toUpperCase(), 0, -18);
+      }
       ctx.fillStyle = isYou ? YOU : WHITE;
-      ctx.font = `700 20px ${FONT}`;
-      ctx.fillText(p.name.toUpperCase(), 0, -18);
 
       if (p.alive) {
         const pip = 9;
@@ -550,8 +580,9 @@ export class Renderer {
       ctx.globalAlpha = p.alive ? 0.5 : 0.25;
       ctx.font = `500 13px ${FONT}`;
       let tag = '';
-      if (p.isBot) tag = `BOT · ${p.difficulty.toUpperCase()}`;
-      else if (isYou) tag = `YOU · ${this.controls}`;
+      if (isYou) tag = `YOU · ${this.controls}`;
+      else if (members.length > 1) tag = 'TEAM';
+      else if (p.isBot) tag = `BOT · ${p.difficulty.toUpperCase()}`;
       ctx.fillText(tag, 0, 28);
       ctx.restore();
     }

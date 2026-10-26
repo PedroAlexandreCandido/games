@@ -39,7 +39,7 @@ Vercel and other serverless platforms will not work: the game needs a long-runni
 
 ## Playing
 
-1. **Create room**: choose the game (Pong, Air hockey or Soccer), 2, 3 or 4 seats, the number of lives, whether you play or only watch, and whether each other seat is open or a bot (easy, medium or hard).
+1. **Create room**: choose the game (Pong, Air hockey or Soccer), 2, 3 or 4 seats, whether 4 players play as teams (2 vs 2), the number of lives, whether you play or only watch, and whether each other seat is open or a bot (easy, medium or hard).
 2. Share the room link (**Copy link**), which looks like `https://your-host/room/ABCDE`. Friends open it, type a name and join. The 5-character code also works on its own.
 3. The admin can kick players, swap open seats for bots, or use **Fill with bots**. **Start** unlocks once every seat is filled.
 
@@ -68,6 +68,7 @@ The installed app opens full screen. On Android it also locks to landscape; iPho
 - **4 players**: a square, with a goal on every side.
 - **Air hockey** uses the same fields, but each goal is a smaller opening in the middle of its side, and the rest of the side is wall. Your round mallet moves freely within a zone around your goal: no closer than the solid crease line, and no further than the faint dashed line. The puck bounces off mallets, and swinging into it hits it harder. The puck slows slightly as it slides.
 - **Soccer** uses the same fields and small goals. Players run anywhere except into a goal's crease. Touch a slow ball to take it; it stays in front of you, the way you're moving, for 2.2 seconds before it runs loose. Bump into someone's ball to tackle them. Fast balls bounce off players instead of being trapped. A perfect shot knocks over whoever it hits, sending them flying back.
+- **Teams (2 vs 2)**: any game with 4 players can be played in teams. Seats 1 and 3 play seats 2 and 4 on the 2-player field, and each team defends one goal and shares its lives. In pong, each teammate covers one half of the side. Your teammate is trimmed in yellow. Negative power-ups only hit the other team, and in soccer you can't tackle or knock over your teammate.
 - When a ball passes your paddle, you lose a life. At 0 lives you are out, and your side becomes a wall. The last player left wins.
 - A power-up appears near the centre every 5–10 seconds. When the ball touches one, the power goes to the player who last hit the ball. On average, 1 in 6 power-ups is negative; a negative one affects every other player.
 

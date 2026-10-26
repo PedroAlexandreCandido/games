@@ -4,13 +4,13 @@ export const SOCCER = {
   goalWidth: 200,
   creaseRadius: 90, // nobody may stand this close to any goal
   playerRadius: 22,
-  playerSpeed: 340,
+  playerSpeed: 270,
   dribbleSpeedMul: 0.85, // carrying the ball slows you a little
   ballRadius: 11,
   dribbleTime: 2.2, // seconds you can keep the ball before it runs loose
   looseSpeed: 160, // how hard the ball rolls away when a dribble runs out
   regainDelay: 0.7, // after losing or kicking the ball, before you can take it again
-  tackleGrace: 0.6, // a new owner can't be tackled straight away
+  tackleGrace: 0.9, // a new owner can't be tackled straight away
   trapSpeed: 650, // slower balls are controlled on touch; faster ones bounce off
   friction: 0.7, // fraction of speed lost per second while rolling
   rollingDrag: 60, // plus this much speed lost per second, so the ball stops

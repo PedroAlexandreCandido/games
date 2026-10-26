@@ -69,7 +69,7 @@ function predict(game, player, maxBounces) {
     }
     if (!best) return null;
     const hit = add(pos, scale(dir, best.t));
-    if (best.owner === player) return dot(sub(hit, best.side.a), best.side.t);
+    if (best.side === player.side) return dot(sub(hit, best.side.a), best.side.t);
     if (!best.isWall) return null;
     pos = hit;
     dir = sub(dir, scale(best.side.n, 2 * dot(dir, best.side.n)));
@@ -103,7 +103,7 @@ export class HockeyBot {
       const b = game.ball;
       this.seen = b.live ? { pos: b.pos, vel: scale(b.dir, b.speed * b.shotMul), age: 0 } : null;
       this.aim = scale(vec(this.rng() * 2 - 1, this.rng() * 2 - 1), level.miss);
-      const rivals = game.players.filter((q) => q.alive && q !== p);
+      const rivals = game.players.filter((q) => q.alive && q.team !== p.team);
       this.goal = rivals.length ? rivals[Math.floor(this.rng() * rivals.length)].zone.center : vec();
     }
 
@@ -163,7 +163,7 @@ export class SoccerBot {
       this.seen = b.live ? { pos: b.pos, vel: scale(b.dir, b.speed * b.shotMul), age: 0 } : null;
       this.aim = scale(vec(this.rng() * 2 - 1, this.rng() * 2 - 1), level.miss * 2);
       if (b.owner !== this.seat) {
-        const rivals = game.players.filter((q) => q.alive && q !== p);
+        const rivals = game.players.filter((q) => q.alive && q.team !== p.team);
         this.goal = rivals.length ? rivals[Math.floor(this.rng() * rivals.length)].goal.center : vec();
       }
     }
@@ -181,6 +181,11 @@ export class SoccerBot {
     const mine = length(sub(ball, p.goal.center));
     const toBall = normalize(sub(ball, p.goal.center));
     const guard = SOCCER.creaseRadius + p.radius + 40;
+    if (b.owner !== null && game.players[b.owner].team === p.team) {
+      // A teammate has it: run ahead towards the goal they're attacking, off to one side.
+      const ahead = add(ball, scale(normalize(sub(this.goal, ball)), 180));
+      return this.#to(add(ahead, scale(vec(-toBall.y, toBall.x), p.slot ? 120 : -120)));
+    }
     if (b.owner !== null) {
       // Someone is dribbling: stand on the line from them to our goal and close in.
       return this.#to(add(p.goal.center, scale(toBall, Math.max(guard, mine - 70))));
@@ -188,7 +193,7 @@ export class SoccerBot {
     const nearest = game.players
       .filter((q) => q.alive)
       .every((q) => q === p || length(sub(q.pos, ball)) >= length(sub(p.pos, ball)) - 20);
-    const onMySide = game.players.every((q) => !q.alive || q === p || length(sub(ball, q.goal.center)) >= mine);
+    const onMySide = game.players.every((q) => !q.alive || q.team === p.team || length(sub(ball, q.goal.center)) >= mine);
     if (nearest || onMySide) return this.#to(ball);
     return this.#to(add(p.goal.center, scale(toBall, guard)));
   }
@@ -198,7 +203,9 @@ export class SoccerBot {
     const target = add(this.goal, this.aim);
     const dist = length(sub(target, p.pos));
     const out = game.ball.ownedFor > SOCCER.dribbleTime - SOCCER.riseTime * 1.4;
-    if (this.held === null && (dist < level.range || out)) {
+    // A rival closing in: get a shot or pass away before the tackle.
+    const pressed = game.players.some((q) => q.alive && q.team !== p.team && length(sub(q.pos, p.pos)) < p.radius + q.radius + 50);
+    if (this.held === null && (dist < level.range || out || pressed)) {
       this.held = 0;
       // Usually a hold that matches the distance; sometimes the perfect release.
       this.holdFor = this.rng() < level.perfect

@@ -22,6 +22,7 @@ export function roomView(room) {
   return {
     code: room.code,
     mode: room.mode,
+    teams: room.teams,
     lives: room.lives,
     started: room.started,
     seats: room.seats.map((s) => ({ kind: s.kind, name: s.name ?? null, difficulty: s.difficulty ?? null })),
@@ -41,14 +42,17 @@ export class RoomManager {
 
   // seats: one entry per seat, 'open' or a bot level. Seat 0 is ignored when
   // the admin plays, because the admin sits there.
-  createRoom({ adminName, adminPlays = true, maxPlayers = 2, lives = 5, mode = 'pong', seats = [] }) {
+  // teams: 2 vs 2, only with 4 players (seats 0 and 2 against 1 and 3).
+  createRoom({ adminName, adminPlays = true, maxPlayers = 2, lives = 5, mode = 'pong', teams = false, seats = [] }) {
     if (![2, 3, 4].includes(maxPlayers)) throw new RoomError('bad-size', 'Rooms hold 2 to 4 players.');
     if (!MODES.includes(mode)) throw new RoomError('bad-mode', 'Unknown game mode.');
+    if (teams && maxPlayers !== 4) throw new RoomError('bad-size', 'Teams need 4 players.');
     const adminId = this.#newId();
     const room = {
       code: this.#newCode(),
       adminId,
       mode,
+      teams: Boolean(teams),
       lives: Math.min(9, Math.max(1, Math.round(Number(lives)) || 5)),
       started: false,
       seats: Array.from({ length: maxPlayers }, openSeat),

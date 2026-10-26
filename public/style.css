@@ -90,6 +90,7 @@ input:focus, select:focus { outline: none; border-color: var(--fg); }
 .field input, .field select { text-transform: none; letter-spacing: normal; font-size: 15px; color: var(--fg); }
 .check { display: flex; gap: 8px; align-items: center; }
 .check input { accent-color: var(--fg); }
+.check.disabled { opacity: 0.4; }
 
 .row { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
 

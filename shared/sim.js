@@ -36,16 +36,23 @@ export const CONFIG = {
 // bounces off them like a real puck. mode 'soccer': round players run
 // anywhere outside the goal creases, dribble the ball and kick it with a
 // charged shot.
+//
+// teams: 4 seats play 2 vs 2 on the 2-player field. Seats 0 and 2 defend goal
+// 0, seats 1 and 3 goal 1; teammates share lives. A player's `team` is the
+// goal they defend, which is just their seat outside team games, so
+// players[side.seat] is always someone defending that side.
 export class Game {
-  constructor({ seats, lives = 5, mode = 'pong', rng = Math.random }) {
+  constructor({ seats, lives = 5, mode = 'pong', teams = false, rng = Math.random }) {
     if (seats.length < 2 || seats.length > 4) throw new Error('A game needs 2 to 4 seats');
     if (!MODES.includes(mode)) throw new Error(`Unknown mode: ${mode}`);
+    if (teams && seats.length !== 4) throw new Error('Team games need 4 seats');
+    this.teams = teams;
     this.rng = rng;
     this.mode = mode;
     this.hockey = mode === 'hockey';
     this.soccer = mode === 'soccer';
     this.ballRadius = { pong: CONFIG.ballRadius, hockey: HOCKEY.puckRadius, soccer: SOCCER.ballRadius }[mode];
-    this.arena = buildArena(seats.length);
+    this.arena = buildArena(teams ? 2 : seats.length);
     this.maxLives = lives;
     this.time = 0;
     this.phase = 'countdown'; // countdown → playing ⇄ serve → over
@@ -126,6 +133,7 @@ export class Game {
       time: this.time,
       phase: this.phase,
       timer: this.timer,
+      teams: this.teams,
       winner: this.winner,
       maxLives: this.maxLives,
       ball: {
@@ -140,7 +148,7 @@ export class Game {
           if (until > this.time) effects[type] = until - this.time;
         }
         return {
-          seat: p.seat, name: p.name, isBot: p.isBot, difficulty: p.difficulty,
+          seat: p.seat, team: p.team, name: p.name, isBot: p.isBot, difficulty: p.difficulty,
           lives: p.lives, alive: p.alive,
           x: c.x, y: c.y, tx: side.t.x, ty: side.t.y, nx: side.n.x, ny: side.n.y,
           ...(p.pos ? { r: p.radius } : { len: p.len }), effects,
@@ -157,35 +165,41 @@ export class Game {
 
   #createPlayer(seat, index, lives) {
     const { sides } = this.arena;
-    const i = sides.findIndex((s) => s.seat === index);
+    const team = this.teams ? index % 2 : index;
+    // Teammates' place on their side: 0 for the first, 1 for the second, null when alone.
+    const slot = this.teams ? Math.floor(index / 2) : null;
+    const i = sides.findIndex((s) => s.seat === team);
     const isGoal = (s) => s.kind === 'goal';
     const cornerGap = CONFIG.paddleInset + CONFIG.paddleThickness;
-    const zone = this.hockey ? hockeyZone(this.arena, index) : null;
-    return {
+    const half = sides[i].length / 2;
+    const zone = this.hockey ? hockeyZone(this.arena, team) : null;
+    const player = {
       seat: index,
+      team,
+      slot,
       name: seat.name,
       isBot: Boolean(seat.isBot),
       difficulty: seat.difficulty ?? null,
       lives,
       alive: true,
       side: sides[i],
-      // Paddles stay out of corners shared with another goal so neighbours never overlap.
-      startGap: isGoal(sides[(i + sides.length - 1) % sides.length]) ? cornerGap : 0,
-      endGap: isGoal(sides[(i + 1) % sides.length]) ? cornerGap : 0,
-      s: sides[i].length / 2,
+      // Paddles stay out of corners shared with another goal so neighbours
+      // never overlap. Teammates each keep to their own half of the side.
+      startGap: slot === 1 ? half : isGoal(sides[(i + sides.length - 1) % sides.length]) ? cornerGap : 0,
+      endGap: slot === 0 ? half : isGoal(sides[(i + 1) % sides.length]) ? cornerGap : 0,
+      s: slot === null ? half : half * (slot === 0 ? 0.5 : 1.5),
       len: CONFIG.paddleLength,
       input: this.mode === 'pong' ? 0 : { dir: vec() },
       effects: {},
       ...(zone && {
         zone,
-        pos: add(zone.center, scale(zone.side.n, zone.minR + (zone.maxR - zone.minR) * 0.4)),
+        pos: add(zone.center, rotate(scale(zone.side.n, zone.minR + (zone.maxR - zone.minR) * 0.4), slot === null ? 0 : slot ? 0.6 : -0.6)),
         vel: vec(),
         radius: HOCKEY.malletRadius,
         lastHit: -1,
       }),
       ...(this.soccer && {
         goal: soccerGoal(sides[i]),
-        pos: this.#kickOffSpot(sides[i]),
         vel: vec(),
         radius: SOCCER.playerRadius,
         facing: sides[i].n,
@@ -197,10 +211,18 @@ export class Game {
         lastHit: -1,
       }),
     };
+    if (this.soccer) player.pos = this.#kickOffSpot(player);
+    return player;
   }
 
-  #kickOffSpot(side) {
-    return add(soccerGoal(side).center, scale(side.n, SOCCER.serveDistance));
+  // Teammates line up side by side.
+  #kickOffSpot(p) {
+    const spot = add(soccerGoal(p.side).center, scale(p.side.n, SOCCER.serveDistance));
+    return p.slot === null ? spot : add(spot, scale(p.side.t, p.slot ? 110 : -110));
+  }
+
+  #rivals(a, b) {
+    return a.team !== b.team;
   }
 
   // Live goals' centres: nobody may stand in their creases.
@@ -237,19 +259,7 @@ export class Game {
     }
 
     // Players shove each other apart.
-    for (let i = 0; i < alive.length; i++) {
-      for (let j = i + 1; j < alive.length; j++) {
-        const a = alive[i];
-        const b = alive[j];
-        const d = sub(b.pos, a.pos);
-        const dist = length(d);
-        const overlap = a.radius + b.radius - dist;
-        if (overlap <= 0) continue;
-        const n = dist > 1e-6 ? scale(d, 1 / dist) : vec(1, 0);
-        a.pos = clampPlayer(this.arena, creases, sub(a.pos, scale(n, overlap / 2)), a.radius);
-        b.pos = clampPlayer(this.arena, creases, add(b.pos, scale(n, overlap / 2)), b.radius);
-      }
-    }
+    this.#separate(alive, (p, pos) => clampPlayer(this.arena, creases, pos, p.radius));
 
     for (const p of alive) {
       if (p.pendingKick === null) continue;
@@ -302,6 +312,25 @@ export class Game {
       const pos = clampMallet(this.arena, p.zone, add(p.pos, step), p.radius);
       p.vel = scale(sub(pos, p.pos), 1 / dt);
       p.pos = pos;
+    }
+    // Teammates share a zone, so their mallets bump into each other.
+    this.#separate(this.players.filter((p) => p.alive), (p, pos) => clampMallet(this.arena, p.zone, pos, p.radius));
+  }
+
+  // Pushes overlapping round players apart, then lets `place` keep each one where it may stand.
+  #separate(list, place) {
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i];
+        const b = list[j];
+        const d = sub(b.pos, a.pos);
+        const dist = length(d);
+        const overlap = a.radius + b.radius - dist;
+        if (overlap <= 0) continue;
+        const n = dist > 1e-6 ? scale(d, 1 / dist) : vec(1, 0);
+        a.pos = place(a, sub(a.pos, scale(n, overlap / 2)));
+        b.pos = place(b, add(b.pos, scale(n, overlap / 2)));
+      }
     }
   }
 
@@ -462,7 +491,7 @@ export class Game {
     if (this.#collideWalls(SOCCER.wallBounce)) return true;
     if (b.ownedFor > SOCCER.tackleGrace) {
       for (const q of this.players) {
-        if (q === p || !this.#canTake(q)) continue;
+        if (!this.#rivals(q, p) || !this.#canTake(q)) continue;
         if (length(sub(q.pos, b.pos)) < q.radius + this.ballRadius) {
           p.noBallUntil = this.time + SOCCER.regainDelay;
           this.#take(q);
@@ -500,7 +529,7 @@ export class Game {
       const n = dist > 1e-6 ? scale(d, 1 / dist) : p.facing;
       const v = scale(b.dir, b.speed * b.shotMul);
       const vn = dot(sub(v, p.vel), n);
-      if (b.super && vn < 0 && p.seat !== b.lastHitter) {
+      if (b.super && vn < 0 && b.lastHitter !== null && this.#rivals(p, this.players[b.lastHitter])) {
         // A perfect shot bowls over whoever it hits.
         p.knock = scale(b.dir, SOCCER.knockback);
         p.stunUntil = this.time + SOCCER.stunTime;
@@ -592,17 +621,19 @@ export class Game {
     this.events.push({ type: 'hit', seat: p.seat, shot: m.shot, x: b.pos.x, y: b.pos.y });
   }
 
+  // p conceded: they (and their teammate) lose a life.
   #score(p) {
     const b = this.ball;
-    p.lives -= 1;
-    this.events.push({ type: 'goal', seat: p.seat, x: b.pos.x, y: b.pos.y });
-    if (p.lives <= 0) {
-      p.alive = false;
-      p.effects = {};
-      this.events.push({ type: 'eliminated', seat: p.seat });
+    this.events.push({ type: 'goal', seat: p.seat, side: p.team, x: b.pos.x, y: b.pos.y });
+    for (const q of this.players.filter((x) => x.team === p.team)) {
+      q.lives -= 1;
+      if (q.lives > 0) continue;
+      q.alive = false;
+      q.effects = {};
+      this.events.push({ type: 'eliminated', seat: q.seat });
     }
     const alive = this.players.filter((q) => q.alive);
-    if (alive.length <= 1) {
+    if (new Set(alive.map((q) => q.team)).size <= 1) {
       this.phase = 'over';
       this.winner = alive[0]?.seat ?? null;
       b.live = false;
@@ -625,7 +656,7 @@ export class Game {
     if (this.soccer) {
       // Everyone lines up again for kick-off.
       for (const p of this.players) {
-        p.pos = this.#kickOffSpot(p.side);
+        p.pos = this.#kickOffSpot(p);
         p.facing = p.side.n;
         p.knock = vec();
         p.stunUntil = 0;
@@ -652,7 +683,7 @@ export class Game {
 
   #collect(pu, by) {
     const def = POWERUPS[pu.type];
-    const targets = def.negative ? this.players.filter((p) => p.alive && p !== by) : [by];
+    const targets = def.negative ? this.players.filter((p) => p.alive && this.#rivals(p, by)) : [by];
     for (const t of targets) t.effects[pu.type] = this.time + def.duration;
     this.powerups = this.powerups.filter((x) => x !== pu);
     this.events.push({

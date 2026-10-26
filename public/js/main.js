@@ -10,6 +10,8 @@ import { Renderer, viewRotation } from './render.js';
 import { SnapshotBuffer } from './snapshots.js';
 
 const MODE_NAMES = { pong: 'Pong', hockey: 'Air hockey', soccer: 'Soccer' };
+// In team games seats 0 and 2 play seats 1 and 3.
+const teamName = (seat) => (seat % 2 ? 'Team B' : 'Team A');
 const SEAT_OPTIONS = [['open', 'Open seat'], ...Object.keys(BOT_LEVELS).map((level) => [level, `Bot · ${level}`])];
 const OVER_DELAY_MS = 1200; // let the win animation play before covering the field
 
@@ -100,7 +102,7 @@ net.on('room', (msg) => {
   }
 });
 
-net.on('start', ({ seatCount, seat, mode }) => startMatch(seatCount, seat, mode));
+net.on('start', ({ seatCount, seat, mode, teams }) => startMatch(seatCount, seat, mode, teams));
 
 net.on('state', ({ ts, s, e, paused }) => {
   if (!match) return;
@@ -208,20 +210,25 @@ for (const btn of document.querySelectorAll('[data-nav]')) {
 const createForm = $('#create-form');
 
 createForm.addEventListener('change', (e) => {
-  if (['players', 'adminPlays', 'mode'].includes(e.target.name)) renderSeatConfig();
+  if (['players', 'adminPlays', 'mode', 'teams'].includes(e.target.name)) renderSeatConfig();
 });
 
 function renderSeatConfig() {
   const data = new FormData(createForm);
   const count = Number(data.get('players'));
   const adminPlays = data.get('adminPlays') === 'on';
+  // Teams are 2 vs 2, so only offered with 4 players.
+  const teamsBox = createForm.elements.teams;
+  teamsBox.disabled = count !== 4;
+  $('#teams-row').classList.toggle('disabled', count !== 4);
+  const teams = count === 4 && teamsBox.checked;
   const container = $('#seat-config');
   container.replaceChildren();
   for (let i = 0; i < count; i++) {
     const row = document.createElement('div');
     row.className = 'seat-row';
     const label = document.createElement('span');
-    label.textContent = `Seat ${i + 1}`;
+    label.textContent = teams ? `Seat ${i + 1} · ${teamName(i).slice(-1)}` : `Seat ${i + 1}`;
     row.append(label);
     if (adminPlays && i === 0) {
       const you = document.createElement('span');
@@ -233,7 +240,7 @@ function renderSeatConfig() {
     }
     container.append(row);
   }
-  drawPreview($('#preview'), buildArena(count), data.get('mode'));
+  drawPreview($('#preview'), buildArena(teams ? 2 : count), data.get('mode'));
 }
 
 function drawPreview(canvas, arena, mode) {
@@ -283,6 +290,7 @@ createForm.addEventListener('submit', (e) => {
     maxPlayers: count,
     lives: Number(data.get('lives')),
     mode: data.get('mode'),
+    teams: count === 4 && data.get('teams') === 'on',
     seats: Array.from({ length: count }, (_, i) => data.get(`seat${i}`) ?? 'open'),
   });
 });
@@ -294,7 +302,7 @@ function renderRoom() {
   if (!room) return;
   $('#room-code').textContent = room.code;
   setRoomPath(room.code);
-  $('#room-meta').textContent = `${MODE_NAMES[room.mode]} · ${room.seats.length} players · ${room.lives} ${room.lives === 1 ? 'life' : 'lives'}`;
+  $('#room-meta').textContent = `${MODE_NAMES[room.mode]}${room.teams ? ' · 2 vs 2' : ''} · ${room.seats.length} players · ${room.lives} ${room.lives === 1 ? 'life' : 'lives'}`;
   const list = $('#seat-list');
   list.replaceChildren();
   room.seats.forEach((seat, i) => {
@@ -309,6 +317,7 @@ function renderRoom() {
     const meta = document.createElement('span');
     meta.className = 'seat-meta';
     const tags = [];
+    if (room.teams) tags.push(teamName(i).toLowerCase());
     if (i === mySeat) tags.push('you');
     if (i === room.adminSeat) tags.push('admin');
     if (seat.kind === 'bot') tags.push(`bot · ${seat.difficulty}`);
@@ -348,10 +357,12 @@ $('#leave-room').addEventListener('click', () => net.send({ t: 'leave' }));
 
 // ---- Match ----
 
-function startMatch(seatCount, seat, mode = 'pong') {
+function startMatch(seatCount, seat, mode = 'pong', teams = false) {
   stopMatch();
-  const arena = buildArena(seatCount);
-  const rotation = viewRotation(arena, seat);
+  const arena = buildArena(teams ? 2 : seatCount);
+  // Your goal: shared with your teammate in team games.
+  const side = seat === null ? null : teams ? seat % 2 : seat;
+  const rotation = viewRotation(arena, side);
   let input = null;
   let controls = '';
   if (seat !== null && mode !== 'pong') {
@@ -364,7 +375,7 @@ function startMatch(seatCount, seat, mode = 'pong') {
       (move) => net.send({ t: 'input', ...move }),
     );
   } else if (seat !== null) {
-    const tangent = rotate(sideForSeat(arena, seat).t, rotation);
+    const tangent = rotate(sideForSeat(arena, side).t, rotation);
     controls = controlsLabel(tangent, isTouchDevice());
     input = new PaddleInput($('#touch-pad'), () => tangent, (dir) => net.send({ t: 'input', dir }));
   }
@@ -419,8 +430,11 @@ function syncOverlay(now) {
   const { isAdmin } = lobby;
   const leave = ['Leave room', () => net.send({ t: 'leave' })];
   if (key === 'over') {
-    const winner = match.snap.players[match.snap.winner];
-    showOverlay(winner ? `${winner.name} wins` : 'Game over', isAdmin ? '' : 'Waiting for the admin…', isAdmin
+    const { players, winner: seat, teams } = match.snap;
+    const winner = players[seat];
+    let title = winner ? `${winner.name} wins` : 'Game over';
+    if (winner && teams) title = `${players.filter((p) => p.team === winner.team).map((p) => p.name).join(' & ')} win`;
+    showOverlay(title, isAdmin ? '' : 'Waiting for the admin…', isAdmin
       ? [['Rematch', () => net.send({ t: 'start' }), true], ['Back to room', () => net.send({ t: 'end' })]]
       : [leave]);
   } else if (key === 'paused') {

@@ -314,3 +314,61 @@ test('soccer: kick messages leave movement alone, and others can tackle after a 
   for (let i = 0; i < 10 && game.ball.owner === 0; i++) tick();
   assert.equal(game.ball.owner, 1);
 });
+
+// ---- Teams ----
+
+for (const mode of ['pong', 'hockey', 'soccer']) {
+  test(`teams: 2 vs 2 ${mode} bots play to a winning team, sharing lives`, () => {
+    const rng = seeded(mode.length * 31);
+    const game = new Game({ seats: botSeats(4, 'easy'), lives: 2, mode, teams: true, rng });
+    const bots = game.players.map((p) => createBot(mode, p.seat, 'easy', rng));
+    assert.equal(game.arena.seatCount, 2);
+    assert.deepEqual(game.players.map((p) => p.team), [0, 1, 0, 1]);
+    const tick = 1 / 120;
+    for (let i = 0; i < 120 * 60 * 30 && game.phase !== 'over'; i++) {
+      for (const bot of bots) game.setInput(bot.seat, bot.update(game, tick));
+      game.step(tick);
+      const [a, b, c, d] = game.players;
+      assert.ok(a.lives === c.lives && b.lives === d.lives, 'teammates share lives');
+    }
+    assert.equal(game.phase, 'over');
+    const winners = game.players.filter((p) => p.alive);
+    assert.equal(winners.length, 2);
+    assert.equal(winners[0].team, winners[1].team);
+  });
+}
+
+test('teams: pong teammates each cover their own half of the side', () => {
+  const game = new Game({ seats: botSeats(4, 'easy'), mode: 'pong', teams: true });
+  const [a, , c] = game.players;
+  game.setInput(0, 1);
+  game.setInput(2, -1);
+  for (let i = 0; i < 240; i++) game.step(1 / 120);
+  const half = a.side.length / 2;
+  assert.ok(a.s + a.len / 2 <= half + 1e-6 && c.s - c.len / 2 >= half - 1e-6);
+});
+
+test('teams: negative power-ups only hit the other team', () => {
+  const game = new Game({ seats: botSeats(4, 'easy'), mode: 'pong', teams: true, rng: seeded(3) });
+  game.phase = 'playing';
+  game.ball.live = true;
+  game.ball.lastHitter = 0;
+  game.ball.dir = vec(0, 1);
+  game.powerups.push({ id: 1, type: 'slow', pos: vec(0, 4), age: 0, life: 12 });
+  game.step(1 / 120);
+  assert.deepEqual(game.players.map((p) => Boolean(p.effects.slow)), [false, true, false, true]);
+});
+
+test('teams: soccer players cannot tackle their teammate', () => {
+  const game = new Game({ seats: botSeats(4, 'easy'), mode: 'soccer', teams: true, rng: seeded(4) });
+  while (game.phase !== 'playing') game.step(1 / 120);
+  game.players[0].pos = vec(-40, 0);
+  game.setInput(0, { x: 1, y: 0 });
+  while (game.ball.owner !== 0) game.step(1 / 120);
+  game.setInput(0, { x: 0, y: 0 });
+  for (let i = 0; i < 120 * SOCCER.tackleGrace + 2; i++) game.step(1 / 120);
+  game.players[2].pos = add(game.ball.pos, vec(SOCCER.playerRadius + 2, 0));
+  game.setInput(2, { tx: game.ball.pos.x, ty: game.ball.pos.y });
+  for (let i = 0; i < 10; i++) game.step(1 / 120);
+  assert.equal(game.ball.owner, 0);
+});

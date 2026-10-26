@@ -8,7 +8,7 @@ const MAX_ROOMS = 500;
 // Message protocol. Every message is JSON with its type in `t`.
 //
 // client → server
-//   create  { name, adminPlays, maxPlayers, lives, mode, seats }   needs a logged-in admin; mode 'pong', 'hockey' or 'soccer'
+//   create  { name, adminPlays, maxPlayers, lives, mode, teams, seats }   needs a logged-in admin; mode 'pong', 'hockey' or 'soccer'
 //   join    { code, name }
 //   leave   {}
 //   setSeat { seat, config }   admin: 'open' (kick) or a bot level
@@ -23,7 +23,7 @@ const MAX_ROOMS = 500;
 // server → client
 //   hello  { user, loginRequired }   user: the logged-in admin's name or null
 //   room   { room, seat, isAdmin }   seat is null for an admin who only watches
-//   start  { seatCount, seat, mode }
+//   start  { seatCount, seat, mode, teams }
 //   state  { ts, s, e, paused }      server send time (ms), snapshot, events since the last state
 //   end    {}
 //   left   {}
@@ -34,8 +34,8 @@ const MAX_ROOMS = 500;
 const roundNumbers = (key, value) => (typeof value === 'number' && !Number.isInteger(value) ? Math.round(value * 100) / 100 : value);
 
 class Match {
-  constructor(seats, lives, mode) {
-    this.game = new Game({ seats, lives, mode });
+  constructor(seats, lives, mode, teams) {
+    this.game = new Game({ seats, lives, mode, teams });
     this.bots = new Map(seats.flatMap((s, i) => (s.isBot ? [[i, createBot(mode, i, s.difficulty)]] : [])));
     this.acc = 0;
     this.paused = false;
@@ -118,6 +118,7 @@ export class Lobby {
           maxPlayers: Number(msg.maxPlayers),
           lives: msg.lives,
           mode: msg.mode ?? 'pong',
+          teams: msg.teams === true,
           seats: Array.isArray(msg.seats) ? msg.seats.map(String) : [],
         });
         this.#leave(client);
@@ -170,8 +171,8 @@ export class Lobby {
     if (running && !running.finished) throw new RoomError('started', 'A game is already running.');
     if (running) this.rooms.finish(room.code); // rematch
     const seats = this.rooms.start(room.code, client.playerId);
-    this.matches.set(room.code, new Match(seats, room.lives, room.mode));
-    for (const c of this.members.get(room.code)) c.send({ t: 'start', seatCount: seats.length, seat: this.#seatOf(c), mode: room.mode });
+    this.matches.set(room.code, new Match(seats, room.lives, room.mode, room.teams));
+    for (const c of this.members.get(room.code)) c.send({ t: 'start', seatCount: seats.length, seat: this.#seatOf(c), mode: room.mode, teams: room.teams });
     this.#broadcastRoom(room.code);
   }
 
